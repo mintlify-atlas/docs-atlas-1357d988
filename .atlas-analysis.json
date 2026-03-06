@@ -1,0 +1,132 @@
+{
+  "projectType": "saas",
+  "projectName": "Proteus",
+  "projectDescription": "A prediction market protocol on BASE where users stake ETH on the exact text a public figure will post, scored by on-chain Levenshtein distance.",
+  "theme": "aspen",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "how-it-works"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/levenshtein-distance",
+              "concepts/market-lifecycle",
+              "concepts/fee-structure",
+              "concepts/rendered-futures"
+            ]
+          },
+          {
+            "group": "Using Proteus",
+            "pages": [
+              "guides/creating-markets",
+              "guides/submitting-predictions",
+              "guides/claiming-payouts",
+              "guides/wallet-setup"
+            ]
+          },
+          {
+            "group": "Smart Contracts",
+            "pages": [
+              "contracts/overview",
+              "contracts/prediction-market-v2",
+              "contracts/genesis-nft",
+              "contracts/payout-manager",
+              "contracts/oracle-system"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "development/local-setup",
+              "development/testing",
+              "development/deployment",
+              "development/architecture"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "REST API",
+            "pages": [
+              "api/overview",
+              "api/authentication",
+              "api/markets",
+              "api/predictions",
+              "api/actors"
+            ]
+          },
+          {
+            "group": "Contract Methods",
+            "pages": [
+              "api/contracts/prediction-market",
+              "api/contracts/genesis-nft",
+              "api/contracts/events"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Research",
+        "groups": [
+          {
+            "group": "Theory",
+            "pages": [
+              "research/whitepaper",
+              "research/thesis",
+              "research/worked-examples",
+              "research/attack-vectors"
+            ]
+          },
+          {
+            "group": "Timepoint Suite",
+            "pages": [
+              "timepoint/overview",
+              "timepoint/integration",
+              "timepoint/tdf-format"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "On-chain Levenshtein distance scoring for continuous-gradient prediction markets",
+    "Text prediction markets with 1,840 bits of information vs 1 bit for binary markets",
+    "Complete market lifecycle: create, submit, resolve, claim payouts",
+    "Genesis NFT system with fee revenue sharing",
+    "Multi-wallet authentication (MetaMask + Coinbase Embedded Wallet)",
+    "Decentralized oracle resolution for X.com posts",
+    "AI-resistant market structure that deepens with AI capability improvements"
+  ],
+  "publicApiSurface": [
+    "PredictionMarketV2.createMarket(actorHandle, endTime)",
+    "PredictionMarketV2.createSubmission(marketId, predictedText)",
+    "PredictionMarketV2.resolveMarket(marketId, actualText)",
+    "PredictionMarketV2.claimPayout(submissionId)",
+    "PredictionMarketV2.levenshteinDistance(a, b)",
+    "GenesisNFT.mint()",
+    "GenesisNFT.claimFees()",
+    "GET /api/chain/markets",
+    "GET /api/chain/market/:id",
+    "GET /api/chain/submissions",
+    "POST /api/auth/nonce",
+    "POST /api/auth/verify",
+    "GET /api/chain/actors"
+  ]
+}
