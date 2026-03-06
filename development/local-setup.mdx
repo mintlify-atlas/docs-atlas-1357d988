@@ -1,0 +1,282 @@
+---
+title: Local Setup
+description: Set up your development environment for Proteus
+---
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- **Node.js 18+** - JavaScript runtime
+- **Python 3.11+** - Backend runtime
+- **Redis** - Caching and task queue
+- **MetaMask or Coinbase Wallet** - For blockchain interactions
+
+## Installation
+
+<Steps>
+  <Step title="Clone the Repository">
+    Clone the Proteus repository and navigate to the project directory:
+
+    ```bash
+    git clone https://github.com/timepoint-ai/proteus.git
+    cd proteus
+    ```
+  </Step>
+
+  <Step title="Install Node Dependencies">
+    Install JavaScript dependencies for smart contract development:
+
+    <CodeGroup>
+      ```bash npm
+      npm install
+      ```
+
+      ```bash yarn
+      yarn install
+      ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Set Up Python Environment">
+    Create a virtual environment and install Python dependencies:
+
+    ```bash
+    # Create virtual environment
+    python3 -m venv .venv
+
+    # Activate virtual environment
+    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+    # Install dependencies with test tools
+    pip install -e ".[test]"
+    ```
+  </Step>
+
+  <Step title="Configure Environment Variables">
+    Copy the example environment file and configure it:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    Update `.env` with the following required variables:
+
+    ```bash .env
+    # Network Configuration
+    NETWORK=base-sepolia
+    CHAIN_ID=84532
+    RPC_URL=https://sepolia.base.org
+
+    # Deployer Wallet (for contract deployment)
+    DEPLOYER_PRIVATE_KEY=your_private_key_here
+
+    # Redis
+    REDIS_URL=redis://localhost:6379
+
+    # Firebase (for email authentication)
+    FIREBASE_API_KEY=your_key
+    FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+    FIREBASE_PROJECT_ID=your-project
+    FIREBASE_APP_ID=your_app_id
+
+    # Coinbase (for embedded wallet)
+    COINBASE_PROJECT_ID=your_project_id
+    ```
+  </Step>
+</Steps>
+
+## Firebase Setup
+
+Proteus uses Firebase for email authentication:
+
+<Steps>
+  <Step title="Create Firebase Project">
+    1. Go to [Firebase Console](https://console.firebase.google.com/)
+    2. Create a new project
+    3. Note your project credentials
+  </Step>
+
+  <Step title="Enable Authentication">
+    1. Navigate to **Authentication** > **Sign-in method**
+    2. Enable **Email/Password**
+    3. Enable **Email link (passwordless sign-in)**
+  </Step>
+
+  <Step title="Configure Authorized Domains">
+    Add your development domain (e.g., `localhost`) to the authorized domains list.
+  </Step>
+
+  <Step title="Copy Credentials">
+    Copy your Firebase credentials to the `.env` file created earlier.
+  </Step>
+</Steps>
+
+## Get Test ETH
+
+To deploy contracts and interact with the BASE Sepolia testnet, you'll need test ETH:
+
+1. Visit the [BASE Sepolia Faucet](https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet)
+2. Request 0.1 ETH to your deployer wallet address
+3. Wait for the transaction to confirm (usually 1-2 minutes)
+
+## Compile Smart Contracts
+
+Compile the Solidity smart contracts:
+
+<CodeGroup>
+  ```bash make
+  make compile
+  ```
+
+  ```bash npm
+  npm run compile
+  ```
+
+  ```bash direct
+  npx hardhat compile
+  ```
+</CodeGroup>
+
+## Deploy Contracts
+
+Deploy contracts to BASE Sepolia testnet:
+
+<CodeGroup>
+  ```bash make
+  make deploy-testnet
+  ```
+
+  ```bash npm
+  npm run deploy:testnet
+  ```
+
+  ```bash direct
+  npx hardhat run scripts/deploy-genesis-phase1.js --network baseSepolia
+  ```
+</CodeGroup>
+
+### Verify Contracts
+
+After deployment, verify your contracts on Basescan:
+
+```bash
+npx hardhat verify --network baseSepolia <CONTRACT_ADDRESS>
+```
+
+## Contract Addresses
+
+The following contracts are already deployed on BASE Sepolia:
+
+| Contract | Address | Status |
+|----------|---------|--------|
+| **PredictionMarketV2** | `0x5174Da96BCA87c78591038DEe9DB1811288c9286` | **Recommended** |
+| GenesisNFT | `0x1A5D4475881B93e876251303757E60E524286A24` | 60/100 minted |
+| PredictionMarket (V1) | `0x667121e8f22570F2c521454D93D6A87e44488d93` | Deprecated |
+
+<Warning>
+  **Use PredictionMarketV2 for all new development.** It includes:
+  - Complete market lifecycle (create → submit → resolve → claim)
+  - On-chain Levenshtein distance for winner determination
+  - 7% platform fee with pull-based collection
+
+  V1 is deprecated (no resolution mechanism).
+</Warning>
+
+## Run the Application
+
+<Steps>
+  <Step title="Start Redis">
+    Start the Redis server in a terminal:
+
+    ```bash
+    redis-server
+    ```
+
+    Verify Redis is running:
+
+    ```bash
+    redis-cli ping
+    # Expected output: PONG
+    ```
+  </Step>
+
+  <Step title="Start Flask Backend">
+    In a new terminal, activate your virtual environment and start the Flask server:
+
+    ```bash
+    source .venv/bin/activate
+    python main.py
+    ```
+
+    The server will start at `http://localhost:5000`
+  </Step>
+
+  <Step title="Start Celery Worker (Optional)">
+    For background tasks, start a Celery worker in another terminal:
+
+    ```bash
+    source .venv/bin/activate
+    celery -A app.celery worker --loglevel=info
+    ```
+  </Step>
+
+  <Step title="Access the Application">
+    Open your browser and navigate to:
+
+    ```
+    http://localhost:5000
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Insufficient funds error">
+    Get more test ETH from the [BASE Sepolia faucet](https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet).
+  </Accordion>
+
+  <Accordion title="Transaction failed">
+    - Check gas limits in `hardhat.config.js`
+    - Verify RPC endpoint is responding
+    - Ensure wallet has enough ETH
+  </Accordion>
+
+  <Accordion title="Firebase auth not working">
+    - Verify authorized domains include your URL
+    - Check API key restrictions in Google Cloud Console
+    - Confirm email/password authentication is enabled
+  </Accordion>
+
+  <Accordion title="Redis connection refused">
+    Ensure Redis server is running:
+
+    ```bash
+    redis-cli ping
+    ```
+
+    If it returns "Connection refused", start Redis:
+
+    ```bash
+    redis-server
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Run Tests" icon="flask" href="/development/testing">
+    Learn how to run the 259+ test suite
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/development/architecture">
+    Understand the system design
+  </Card>
+  <Card title="Deploy" icon="rocket" href="/development/deployment">
+    Deploy to Railway or mainnet
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Explore the API endpoints
+  </Card>
+</CardGroup>

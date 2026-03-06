@@ -1,0 +1,98 @@
+---
+title: "Proteus"
+description: "AI-resistant prediction markets scored by on-chain Levenshtein distance"
+---
+
+<Note>
+**v0 Alpha — Proof of Concept | BASE Sepolia Testnet**
+
+This is a research prototype exploring text prediction markets. Not audited. Not production-ready. Do not deploy to mainnet.
+</Note>
+
+## Welcome to Proteus
+
+Proteus is a prediction market protocol on BASE where users stake ETH on the **exact text** a public figure will post. Winners are determined by on-chain Levenshtein distance — the closest match wins.
+
+This is a fundamentally different market structure than binary yes/no contracts. Text prediction markets encode **1,840 bits of information** versus 1 bit for binary markets, creating a continuous gradient where every character of precision is rewarded.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get started with creating markets and submitting predictions
+  </Card>
+  <Card title="How It Works" icon="lightbulb" href="/how-it-works">
+    Understand the core mechanics and Levenshtein scoring
+  </Card>
+  <Card title="Smart Contracts" icon="file-contract" href="/contracts/overview">
+    Explore the on-chain architecture on BASE Sepolia
+  </Card>
+  <Card title="Research" icon="flask" href="/research/whitepaper">
+    Read the whitepaper and theoretical foundations
+  </Card>
+</CardGroup>
+
+## The Thesis
+
+Binary prediction markets encode exactly one bit of information per contract. As AI systems approach superhuman forecasting, the edge any participant can capture in a binary market collapses toward zero — the correct answer becomes trivially computable.
+
+Text prediction over an alphabet with strings up to length *n* has a combinatorially explosive outcome space. Levenshtein distance induces a proper metric on that space, meaning payoffs aren't a binary cliff but a continuous gradient surface where every character of precision is rewarded.
+
+**As AI capabilities improve, binary markets become commoditized. Text prediction markets deepen.**
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="On-Chain Levenshtein Distance" icon="calculator">
+    Continuous-gradient scoring implemented in Solidity
+  </Card>
+  <Card title="1,840 Bits of Information" icon="chart-line">
+    Vastly richer outcome space than binary contracts
+  </Card>
+  <Card title="Genesis NFT System" icon="gem">
+    Fee revenue sharing for early supporters
+  </Card>
+  <Card title="Multi-Wallet Auth" icon="wallet">
+    MetaMask + Coinbase Embedded Wallet support
+  </Card>
+</CardGroup>
+
+## Quick Example
+
+```
+Market: "What will @elonmusk post?"
+
+Competitors submit predictions:
+- AI (Claude): "Starship flight 2 confirmed for March. 
+               Humanity becomes multiplanetary or dies trying."
+- Human fan:  "The future of humanity is Mars and beyond"
+- Random bot: "a8j3kd9xmz pqlw7 MARS ufk2 rocket lol"
+
+Actual text: "Starship flight 2 is GO for March. Humanity 
+              becomes multiplanetary or we die trying."
+
+On-chain Levenshtein distance:
+  AI (Claude) → 12 edits   ← WINNER
+  Human fan   → 59 edits
+  Random bot  → 72 edits
+```
+
+The AI wins the pool. The scoring is continuous — every character of precision is rewarded.
+
+## What This Is (and Isn't)
+
+**This is a v0 alpha.** It validates the core idea: on-chain Levenshtein distance creates a viable, AI-resistant prediction market primitive. The smart contracts work. The market lifecycle works. The math works.
+
+**Do not deploy this to mainnet.** No security audit, no multisig, no production wallet integration. This is a research prototype, not intended for commercial use.
+
+## Get Started
+
+<CardGroup cols={3}>
+  <Card title="Quickstart Guide" icon="play" href="/quickstart">
+    Create your first market
+  </Card>
+  <Card title="Local Development" icon="code" href="/development/local-setup">
+    Set up your dev environment
+  </Card>
+  <Card title="API Reference" icon="terminal" href="/api/overview">
+    Explore the REST API
+  </Card>
+</CardGroup>

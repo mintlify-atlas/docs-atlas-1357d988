@@ -1,0 +1,492 @@
+---
+title: PredictionMarketV2
+description: Full-featured prediction market contract with on-chain Levenshtein distance winner determination
+---
+
+## Overview
+
+`PredictionMarketV2` is the recommended prediction market contract with complete market lifecycle and on-chain winner determination using the Levenshtein distance algorithm.
+
+**Contract Address**: `0x5174Da96BCA87c78591038DEe9DB1811288c9286` (BASE Sepolia)
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Complete Lifecycle" icon="circle-check">
+    create → submit → resolve → claim with all logic on-chain
+  </Card>
+  <Card title="Levenshtein Distance" icon="ruler">
+    On-chain edit distance calculation for winner determination
+  </Card>
+  <Card title="Pull-Based Fees" icon="hand-holding-dollar">
+    Fee collection prevents griefing attacks
+  </Card>
+  <Card title="Fair Refunds" icon="rotate-left">
+    Single submissions auto-refund with no fee
+  </Card>
+</CardGroup>
+
+## Architecture
+
+PredictionMarketV2.sol:21-59
+```solidity
+contract PredictionMarketV2 is Ownable, Pausable, ReentrancyGuard {
+    struct Market {
+        string actorHandle;        // Social media handle being predicted
+        uint256 endTime;           // When betting closes
+        uint256 totalPool;         // Total ETH in this market
+        bool resolved;             // Has winner been determined
+        uint256 winningSubmissionId; // ID of winning submission (0 if unresolved)
+        address creator;           // Who created this market
+    }
+
+    struct Submission {
+        uint256 marketId;          // Which market this belongs to
+        address submitter;         // Who submitted this prediction
+        string predictedText;      // The predicted text
+        uint256 amount;            // ETH staked on this prediction
+        bool claimed;              // Has payout been claimed
+    }
+    
+    uint256 public constant PLATFORM_FEE_BPS = 700;  // 7% fee
+    uint256 public constant MIN_BET = 0.001 ether;
+    uint256 public constant BETTING_CUTOFF = 1 hours;
+    uint256 public constant MIN_SUBMISSIONS = 2;     // Minimum for valid resolution
+    uint256 public constant MAX_TEXT_LENGTH = 280;   // Tweet-length limit
+}
+```
+
+## Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `PLATFORM_FEE_BPS` | 700 | 7% platform fee on payouts |
+| `MIN_BET` | 0.001 ETH | Minimum stake for submissions |
+| `BETTING_CUTOFF` | 1 hour | No submissions within 1 hour of market end |
+| `MIN_SUBMISSIONS` | 2 | Minimum submissions required for resolution |
+| `MAX_TEXT_LENGTH` | 280 | Maximum prediction text length (tweet-sized) |
+
+## Core Functions
+
+### createMarket
+
+Create a new prediction market.
+
+<ParamField path="_actorHandle" type="string">
+  Social media handle being predicted (e.g., "@elonmusk")
+</ParamField>
+
+<ParamField path="_duration" type="uint256">
+  How long until market ends (in seconds, 1 hour to 30 days)
+</ParamField>
+
+PredictionMarketV2.sol:139-159
+```solidity
+function createMarket(
+    string calldata _actorHandle,
+    uint256 _duration
+) external whenNotPaused returns (uint256) {
+    if (_duration < 1 hours || _duration > 30 days) revert InvalidDuration();
+
+    uint256 marketId = marketCount++;
+
+    markets[marketId] = Market({
+        actorHandle: _actorHandle,
+        endTime: block.timestamp + _duration,
+        totalPool: 0,
+        resolved: false,
+        winningSubmissionId: 0,
+        creator: msg.sender
+    });
+
+    emit MarketCreated(marketId, _actorHandle, block.timestamp + _duration, msg.sender);
+
+    return marketId;
+}
+```
+
+**Returns**: `marketId` - The ID of the newly created market
+
+**Events**: `MarketCreated(uint256 indexed marketId, string actorHandle, uint256 endTime, address creator)`
+
+### createSubmission
+
+Submit a prediction and stake ETH on it.
+
+<ParamField path="_marketId" type="uint256">
+  The market to submit to
+</ParamField>
+
+<ParamField path="_predictedText" type="string">
+  Your prediction of what the actor will say (max 280 characters)
+</ParamField>
+
+<ParamField path="msg.value" type="uint256">
+  ETH to stake on this prediction (min 0.001 ETH)
+</ParamField>
+
+PredictionMarketV2.sol:167-198
+```solidity
+function createSubmission(
+    uint256 _marketId,
+    string calldata _predictedText
+) external payable whenNotPaused nonReentrant returns (uint256) {
+    Market storage market = markets[_marketId];
+
+    if (market.endTime == 0) revert MarketNotFound();
+    if (market.resolved) revert MarketAlreadyResolved();
+    if (block.timestamp >= market.endTime) revert MarketEnded();
+    if (block.timestamp >= market.endTime - BETTING_CUTOFF) revert BettingCutoffPassed();
+    if (msg.value < MIN_BET) revert InsufficientBet();
+    if (bytes(_predictedText).length == 0) revert EmptyPrediction();
+    if (bytes(_predictedText).length > MAX_TEXT_LENGTH) revert PredictionTooLong();
+
+    uint256 submissionId = submissionCount++;
+
+    submissions[submissionId] = Submission({
+        marketId: _marketId,
+        submitter: msg.sender,
+        predictedText: _predictedText,
+        amount: msg.value,
+        claimed: false
+    });
+
+    marketSubmissions[_marketId].push(submissionId);
+    userSubmissions[msg.sender].push(submissionId);
+    market.totalPool += msg.value;
+
+    emit SubmissionCreated(submissionId, _marketId, msg.sender, _predictedText, msg.value);
+
+    return submissionId;
+}
+```
+
+**Returns**: `submissionId` - The ID of the newly created submission
+
+**Events**: `SubmissionCreated(uint256 indexed submissionId, uint256 indexed marketId, address submitter, string predictedText, uint256 amount)`
+
+### resolveMarket
+
+Resolve a market by providing the actual text. Winner determined by minimum Levenshtein distance. First submitter wins ties.
+
+<Note>
+Only callable by contract owner. In production, this would be replaced by decentralized oracle consensus.
+</Note>
+
+<ParamField path="_marketId" type="uint256">
+  The market to resolve
+</ParamField>
+
+<ParamField path="_actualText" type="string">
+  The actual text the actor posted
+</ParamField>
+
+PredictionMarketV2.sol:207-244
+```solidity
+function resolveMarket(
+    uint256 _marketId,
+    string calldata _actualText
+) external onlyOwner {
+    Market storage market = markets[_marketId];
+
+    if (market.endTime == 0) revert MarketNotFound();
+    if (market.resolved) revert MarketAlreadyResolved();
+    if (block.timestamp < market.endTime) revert MarketNotEnded();
+
+    uint256[] storage subIds = marketSubmissions[_marketId];
+    if (subIds.length < MIN_SUBMISSIONS) revert MinimumSubmissionsNotMet();
+
+    // Find submission with minimum Levenshtein distance
+    // First submitter wins ties (lower submissionId)
+    uint256 winningId = subIds[0];
+    uint256 minDistance = levenshteinDistance(
+        submissions[subIds[0]].predictedText,
+        _actualText
+    );
+
+    for (uint256 i = 1; i < subIds.length; i++) {
+        uint256 distance = levenshteinDistance(
+            submissions[subIds[i]].predictedText,
+            _actualText
+        );
+        // Strict less-than: first submitter wins ties
+        if (distance < minDistance) {
+            minDistance = distance;
+            winningId = subIds[i];
+        }
+    }
+
+    market.resolved = true;
+    market.winningSubmissionId = winningId;
+
+    emit MarketResolved(_marketId, winningId, _actualText, minDistance);
+}
+```
+
+**Events**: `MarketResolved(uint256 indexed marketId, uint256 winningSubmissionId, string actualText, uint256 winningDistance)`
+
+### claimPayout
+
+Claim payout for a winning submission.
+
+<ParamField path="_submissionId" type="uint256">
+  The winning submission to claim for
+</ParamField>
+
+PredictionMarketV2.sol:250-273
+```solidity
+function claimPayout(uint256 _submissionId) external nonReentrant {
+    Submission storage submission = submissions[_submissionId];
+    Market storage market = markets[submission.marketId];
+
+    if (submission.submitter == address(0)) revert SubmissionNotFound();
+    if (!market.resolved) revert MarketNotEnded();
+    if (market.winningSubmissionId != _submissionId) revert NotWinningSubmission();
+    if (submission.claimed) revert AlreadyClaimed();
+
+    submission.claimed = true;
+
+    uint256 totalPool = market.totalPool;
+    uint256 fee = (totalPool * PLATFORM_FEE_BPS) / 10000;
+    uint256 payout = totalPool - fee;
+
+    // Accumulate fees for pull-based withdrawal (prevents griefing)
+    pendingFees[feeRecipient] += fee;
+
+    // Transfer payout to winner
+    (bool success, ) = submission.submitter.call{value: payout}("");
+    if (!success) revert TransferFailed();
+
+    emit PayoutClaimed(_submissionId, submission.submitter, payout);
+}
+```
+
+**Events**: `PayoutClaimed(uint256 indexed submissionId, address indexed claimer, uint256 amount)`
+
+### refundSingleSubmission
+
+Refund the only submission when market ends with single entry (no fee charged).
+
+<ParamField path="_marketId" type="uint256">
+  The market with single submission
+</ParamField>
+
+PredictionMarketV2.sol:280-301
+```solidity
+function refundSingleSubmission(uint256 _marketId) external nonReentrant {
+    Market storage market = markets[_marketId];
+
+    if (market.endTime == 0) revert MarketNotFound();
+    if (market.resolved) revert MarketAlreadyResolved();
+    if (block.timestamp < market.endTime) revert MarketNotEndedForRefund();
+
+    uint256[] storage subIds = marketSubmissions[_marketId];
+    if (subIds.length != 1) revert NotSingleSubmission();
+
+    Submission storage submission = submissions[subIds[0]];
+    if (submission.claimed) revert AlreadyClaimed();
+
+    submission.claimed = true;
+    market.resolved = true;  // Mark as resolved to prevent re-entry
+
+    // Full refund - no fee taken
+    (bool success, ) = submission.submitter.call{value: submission.amount}("");
+    if (!success) revert TransferFailed();
+
+    emit SingleSubmissionRefunded(_marketId, subIds[0], submission.submitter, submission.amount);
+}
+```
+
+**Events**: `SingleSubmissionRefunded(uint256 indexed marketId, uint256 indexed submissionId, address submitter, uint256 amount)`
+
+## View Functions
+
+### getMarketDetails
+
+Get complete information about a market.
+
+PredictionMarketV2.sol:349-368
+```solidity
+function getMarketDetails(uint256 _marketId) external view returns (
+    string memory actorHandle,
+    uint256 endTime,
+    uint256 totalPool,
+    bool resolved,
+    uint256 winningSubmissionId,
+    address creator,
+    uint256[] memory submissionIds
+) {
+    Market storage market = markets[_marketId];
+    return (
+        market.actorHandle,
+        market.endTime,
+        market.totalPool,
+        market.resolved,
+        market.winningSubmissionId,
+        market.creator,
+        marketSubmissions[_marketId]
+    );
+}
+```
+
+### getSubmissionDetails
+
+Get complete information about a submission.
+
+PredictionMarketV2.sol:379-394
+```solidity
+function getSubmissionDetails(uint256 _submissionId) external view returns (
+    uint256 marketId,
+    address submitter,
+    string memory predictedText,
+    uint256 amount,
+    bool claimed
+) {
+    Submission storage sub = submissions[_submissionId];
+    return (
+        sub.marketId,
+        sub.submitter,
+        sub.predictedText,
+        sub.amount,
+        sub.claimed
+    );
+}
+```
+
+### levenshteinDistance
+
+Calculate edit distance between two strings using dynamic programming.
+
+<ParamField path="a" type="string">
+  First string
+</ParamField>
+
+<ParamField path="b" type="string">
+  Second string
+</ParamField>
+
+PredictionMarketV2.sol:460-503
+```solidity
+function levenshteinDistance(
+    string memory a,
+    string memory b
+) public pure returns (uint256) {
+    bytes memory bytesA = bytes(a);
+    bytes memory bytesB = bytes(b);
+
+    uint256 lenA = bytesA.length;
+    uint256 lenB = bytesB.length;
+
+    // Handle empty string cases
+    if (lenA == 0) return lenB;
+    if (lenB == 0) return lenA;
+
+    // Create distance matrix (only need two rows for space optimization)
+    uint256[] memory prevRow = new uint256[](lenB + 1);
+    uint256[] memory currRow = new uint256[](lenB + 1);
+
+    // Initialize first row
+    for (uint256 j = 0; j <= lenB; j++) {
+        prevRow[j] = j;
+    }
+
+    // Fill in the rest of the matrix
+    for (uint256 i = 1; i <= lenA; i++) {
+        currRow[0] = i;
+
+        for (uint256 j = 1; j <= lenB; j++) {
+            uint256 cost = (bytesA[i - 1] == bytesB[j - 1]) ? 0 : 1;
+
+            // Minimum of: deletion, insertion, substitution
+            uint256 deletion = prevRow[j] + 1;
+            uint256 insertion = currRow[j - 1] + 1;
+            uint256 substitution = prevRow[j - 1] + cost;
+
+            currRow[j] = _min3(deletion, insertion, substitution);
+        }
+
+        // Swap rows
+        (prevRow, currRow) = (currRow, prevRow);
+    }
+
+    return prevRow[lenB];
+}
+```
+
+**Returns**: The edit distance between the strings
+
+**Gas Cost**: O(m*n) where m and n are string lengths
+
+## Events
+
+```solidity
+event MarketCreated(uint256 indexed marketId, string actorHandle, uint256 endTime, address creator);
+event SubmissionCreated(uint256 indexed submissionId, uint256 indexed marketId, address submitter, string predictedText, uint256 amount);
+event MarketResolved(uint256 indexed marketId, uint256 winningSubmissionId, string actualText, uint256 winningDistance);
+event PayoutClaimed(uint256 indexed submissionId, address indexed claimer, uint256 amount);
+event SingleSubmissionRefunded(uint256 indexed marketId, uint256 indexed submissionId, address submitter, uint256 amount);
+event FeesWithdrawn(address indexed recipient, uint256 amount);
+```
+
+## Usage Example
+
+```javascript
+const market = await ethers.getContractAt(
+  "PredictionMarketV2",
+  "0x5174Da96BCA87c78591038DEe9DB1811288c9286"
+);
+
+// Create a market
+const tx = await market.createMarket("@elonmusk", 86400); // 1 day
+await tx.wait();
+const marketId = await market.marketCount() - 1;
+
+// Submit a prediction
+const submission = await market.createSubmission(
+  marketId,
+  "Starship flight 2 is GO for March",
+  { value: ethers.utils.parseEther("0.01") }
+);
+await submission.wait();
+
+// Check market details
+const details = await market.getMarketDetails(marketId);
+console.log("Total pool:", ethers.utils.formatEther(details.totalPool));
+```
+
+## Gas Estimates
+
+| Operation | Typical Gas | Notes |
+|-----------|-------------|-------|
+| createMarket | ~120,000 | Fixed cost |
+| createSubmission | 200K-400K | Scales with text length |
+| resolveMarket | 1.5M-9M | Levenshtein calculation, varies significantly |
+| claimPayout | ~90,000 | Fixed cost |
+| refundSingleSubmission | ~80,000 | Fixed cost |
+
+<Warning>
+**Resolution Gas Costs**: The `resolveMarket` function gas cost depends heavily on the number of submissions and their text lengths due to the O(m*n) Levenshtein algorithm. Recommend limiting markets to ~10 submissions with texts under 280 characters for reasonable gas costs.
+</Warning>
+
+## Security Considerations
+
+<CardGroup cols={2}>
+  <Card title="Reentrancy Protected" icon="shield">
+    All state-changing functions use OpenZeppelin's ReentrancyGuard
+  </Card>
+  <Card title="Pull-Based Fees" icon="check">
+    Fee withdrawal prevents griefing attacks via malicious recipients
+  </Card>
+  <Card title="First-Submitter Wins Ties" icon="trophy">
+    Deterministic tie-breaking avoids race conditions
+  </Card>
+  <Card title="Emergency Withdrawal" icon="life-ring">
+    Owner can refund users after 7 days if resolution fails
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<Card title="Oracle System" icon="eye" href="/contracts/oracle-system">
+  Learn about decentralized text validation for market resolution
+</Card>

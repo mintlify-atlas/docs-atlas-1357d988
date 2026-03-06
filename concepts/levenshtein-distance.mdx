@@ -1,0 +1,358 @@
+---
+title: 'Levenshtein Distance'
+description: 'The mathematical foundation of Proteus prediction scoring'
+icon: 'ruler'
+---
+
+Levenshtein distance is the core scoring mechanism in Proteus. It measures how many single-character edits (insertions, deletions, or substitutions) are needed to transform one string into another.
+
+## What is Levenshtein Distance?
+
+The Levenshtein distance between two strings is the **minimum number of edit operations** required to transform one into the other.
+
+### Example Calculation
+
+Let's walk through a simple example:
+
+<CodeGroup>
+```text Strings to Compare
+String A: "Starship confirmed for March"
+String B: "Starship is GO for March"
+```
+
+```text Edit Operations
+1. Delete "confirmed "
+2. Insert "is "
+3. Insert "GO "
+
+Total edits: 3 (approximately - actual calculation is more precise)
+```
+</CodeGroup>
+
+### Real Market Example
+
+From the Satya Nadella market (Example 5 in the whitepaper):
+
+<Steps>
+  <Step title="Actual Text">
+    `Copilot is now generating 46% of all new code at GitHub-connected enterprises. The AI transformation of software is just beginning.`
+  </Step>
+  
+  <Step title="Claude Prediction">
+    `Copilot is now generating 45% of all new code at GitHub-connected enterprises. The AI transformation of software is just beginning.`
+    
+    **Distance: 1** (single character difference: `5` → `6`)
+  </Step>
+  
+  <Step title="GPT Prediction">
+    `Copilot is now generating 43% of all new code at GitHub-connected enterprises. The AI transformation of software has just begun.`
+    
+    **Distance: 8** (number difference plus phrasing change)
+  </Step>
+</Steps>
+
+<Info>
+**Winner:** Claude at distance 1. The 7-edit gap between Claude and GPT determines the entire pool. In a binary market, both would "predict correctly" and split nothing.
+</Info>
+
+## Mathematical Properties
+
+Levenshtein distance is a **proper metric** on the space of strings. This mathematical property is essential for fair market design.
+
+### Metric Properties
+
+<CardGroup cols={2}>
+  <Card title="Identity" icon="equals">
+    d(a, b) = 0 if and only if a = b
+    
+    Perfect predictions are unambiguously identified.
+  </Card>
+  
+  <Card title="Symmetry" icon="arrow-right-arrow-left">
+    d(a, b) = d(b, a)
+    
+    Order doesn't matter - prediction vs actual gives same distance.
+  </Card>
+  
+  <Card title="Triangle Inequality" icon="triangle">
+    d(a, c) ≤ d(a, b) + d(b, c)
+    
+    Ensures coherent distance relationships.
+  </Card>
+  
+  <Card title="Non-Negativity" icon="greater-than">
+    d(a, b) ≥ 0 for all strings
+    
+    Distances are always positive or zero.
+  </Card>
+</CardGroup>
+
+### Why This Matters
+
+These properties guarantee:
+- **No gaming**: You can't manipulate distances through intermediate strings
+- **Deterministic**: Same inputs always produce same distance
+- **Fair**: The closest prediction always wins, no ambiguity
+
+## On-Chain Implementation
+
+Proteus computes Levenshtein distance entirely on-chain using the Wagner-Fischer dynamic programming algorithm.
+
+### Algorithm Overview
+
+```solidity PredictionMarketV2.sol:460-503
+function levenshteinDistance(
+    string memory a,
+    string memory b
+) public pure returns (uint256) {
+    bytes memory bytesA = bytes(a);
+    bytes memory bytesB = bytes(b);
+    
+    uint256 lenA = bytesA.length;
+    uint256 lenB = bytesB.length;
+    
+    // Handle empty string cases
+    if (lenA == 0) return lenB;
+    if (lenB == 0) return lenA;
+    
+    // Create distance matrix (two-row optimization)
+    uint256[] memory prevRow = new uint256[](lenB + 1);
+    uint256[] memory currRow = new uint256[](lenB + 1);
+    
+    // Initialize first row
+    for (uint256 j = 0; j <= lenB; j++) {
+        prevRow[j] = j;
+    }
+    
+    // Fill in the matrix
+    for (uint256 i = 1; i <= lenA; i++) {
+        currRow[0] = i;
+        
+        for (uint256 j = 1; j <= lenB; j++) {
+            uint256 cost = (bytesA[i - 1] == bytesB[j - 1]) ? 0 : 1;
+            
+            // Minimum of: deletion, insertion, substitution
+            uint256 deletion = prevRow[j] + 1;
+            uint256 insertion = currRow[j - 1] + 1;
+            uint256 substitution = prevRow[j - 1] + cost;
+            
+            currRow[j] = _min3(deletion, insertion, substitution);
+        }
+        
+        // Swap rows for next iteration
+        (prevRow, currRow) = (currRow, prevRow);
+    }
+    
+    return prevRow[lenB];
+}
+```
+
+### Complexity & Gas Costs
+
+<AccordionGroup>
+  <Accordion title="Time Complexity: O(m × n)">
+    Where `m` and `n` are the lengths of the two strings. For tweet-length text (280 characters each), this is approximately 78,400 operations.
+  </Accordion>
+  
+  <Accordion title="Space Complexity: O(min(m, n))">
+    The two-row optimization reduces memory usage. We only store two rows of the matrix at a time instead of the full m × n matrix.
+  </Accordion>
+  
+  <Accordion title="Gas Costs on BASE L2">
+    Approximate gas costs from benchmarking:
+    
+    | String Length (each) | Gas Cost |
+    |----------------------|----------|
+    | 50 characters        | ~400,000 |
+    | 100 characters       | ~1,500,000 |
+    | 280 characters       | ~9,000,000 |
+    
+    The contract enforces `MAX_TEXT_LENGTH = 280` to prevent block gas limit DoS attacks.
+  </Accordion>
+</AccordionGroup>
+
+## Continuous Gradient Payoff
+
+Unlike binary markets (correct/incorrect), Levenshtein creates a **continuous payoff surface**.
+
+### Distance vs Payout
+
+The winner is determined by:
+
+```solidity
+winner = argmin_{s ∈ submissions} d_L(s.predictedText, actualText)
+```
+
+Every character of precision matters:
+
+<Tabs>
+  <Tab title="Perfect (d = 0)">
+    Exact match. Takes entire pool (93% after fees).
+    
+    Example: `__NULL__` prediction when target doesn't post.
+  </Tab>
+  
+  <Tab title="Near-Perfect (d = 1-5)">
+    Typically insider information or rehearsed copy.
+    
+    Example: Meta intern with draft deck at d = 3.
+  </Tab>
+  
+  <Tab title="High Quality (d = 10-20)">
+    Strong AI roleplay or informed human.
+    
+    Example: Claude roleplay at d = 12 on Musk post.
+  </Tab>
+  
+  <Tab title="Thematic (d = 50-100)">
+    Got the topic right, but not the wording.
+    
+    Example: "Tim will talk about privacy" at d = 53.
+  </Tab>
+  
+  <Tab title="Random (d ≈ max length)">
+    Gibberish or spam bots.
+    
+    Example: Random characters at d = 65-73.
+  </Tab>
+</Tabs>
+
+### Lipschitz Continuity
+
+The expected payoff is **Lipschitz-continuous** with respect to prediction quality:
+
+```
+|E[payout | d] − E[payout | d+1]| ≤ 0.93 × pool × |F(d) − F(d+1)|
+```
+
+This means:
+- Marginal improvements **always** translate to marginal payout improvements
+- No "close enough" threshold
+- Every edit counts
+
+## Anti-Bot Properties
+
+Levenshtein distance naturally filters spam and random submissions.
+
+### Expected Distance for Random Strings
+
+For random strings over a large alphabet (like printable ASCII with 95 characters):
+
+```
+E[d_L(random_a, random_b)] → max(len(a), len(b))
+```
+
+**Why?** With 95 characters, the probability of any two random characters matching is only ~1.05%. Random strings achieve near-maximal distance.
+
+### Real Example: Bot Entropy
+
+From Tim Cook market (Example 6):
+
+| Submitter | Prediction | Distance |
+|-----------|-----------|----------|
+| AI Roleplay | Coherent Apple Intelligence message | 28 |
+| Human (thematic) | "Tim will say something about privacy..." | 53 |
+| **Random bot** | `x7g APPLE j2m PHONE kq9 BUY...` | **65** |
+| **Degenerate bot** | `aaaaaaaaaaaaaaaaaaaaaa...` | **73** |
+
+<Warning>
+**The metric itself is the spam filter.** In a character-level outcome space with a large alphabet, there is no shortcut for random or adversarial submissions. Bots waste their money.
+</Warning>
+
+## Outcome Space Analysis
+
+Levenshtein distance operates over a combinatorially explosive space.
+
+### Binary Market
+- **Outcome space**: {0, 1}
+- **Information content**: 1 bit
+
+### Text Prediction Market
+- **Alphabet**: 95 printable ASCII characters
+- **Max length**: 280 characters (tweet length)
+- **Outcome space**: ≈ 95^280 ≈ 10^554 possibilities
+- **Information content**: ≈ 1,840 bits
+
+<Info>
+**Information density ratio: 1,840:1**
+
+Each text prediction market encodes approximately **1,840 times more information** than a binary market.
+</Info>
+
+This is a conservative estimate. Even the "likely" region of natural language is astronomically larger than {0, 1}.
+
+## Comparison: Levenshtein vs Binary
+
+<CardGroup cols={2}>
+  <Card title="Binary Markets" icon="toggle-off">
+    **Payoff**: Cliff function (right/wrong)
+    
+    **Space**: 2 outcomes
+    
+    **AI Resistance**: Collapses as models converge
+    
+    **Example**: "Will Nadella post about Copilot? Yes/No"
+    
+    Both Claude and GPT say "Yes" → split pool
+  </Card>
+  
+  <Card title="Levenshtein Markets" icon="ruler-combined">
+    **Payoff**: Continuous gradient
+    
+    **Space**: 10^554 outcomes
+    
+    **AI Resistance**: Deepens as models improve
+    
+    **Example**: "What will Nadella post about Copilot?"
+    
+    Claude at d=1, GPT at d=8 → 7-edit gap = entire pool
+  </Card>
+</CardGroup>
+
+## Key Takeaways
+
+<CardGroup cols={3}>
+  <Card title="Proper Metric" icon="compass-drafting">
+    Mathematical guarantees ensure fair, deterministic scoring
+  </Card>
+  
+  <Card title="Continuous Payoff" icon="chart-line">
+    Every character of precision is rewarded
+  </Card>
+  
+  <Card title="Natural Spam Filter" icon="shield-check">
+    Random strings achieve maximum distance automatically
+  </Card>
+  
+  <Card title="On-Chain Computation" icon="microchip">
+    Wagner-Fischer algorithm runs entirely on BASE
+  </Card>
+  
+  <Card title="1,840x Information" icon="database">
+    Massive outcome space vs binary markets
+  </Card>
+  
+  <Card title="AI-Resistant" icon="robot">
+    Markets deepen as models improve, not commoditize
+  </Card>
+</CardGroup>
+
+## Further Reading
+
+<CardGroup cols={2}>
+  <Card title="Market Lifecycle" icon="chart-gantt" href="/concepts/market-lifecycle">
+    How markets progress from creation to resolution
+  </Card>
+  
+  <Card title="Fee Structure" icon="wallet" href="/concepts/fee-structure">
+    Platform fees and payout distribution
+  </Card>
+</CardGroup>
+
+---
+
+<Note>
+**Academic Reference**: Levenshtein, V. I. (1966). Binary codes capable of correcting deletions, insertions, and reversals. *Soviet Physics Doklady*, 10(8), 707-710.
+
+Wagner-Fischer algorithm: Wagner, R. A., & Fischer, M. J. (1974). The string-to-string correction problem. *Journal of the ACM*, 21(1), 168-173.
+</Note>

@@ -1,0 +1,429 @@
+---
+title: Deployment
+description: Deploy Proteus contracts and backend to testnet or production
+---
+
+## Overview
+
+Proteus runs on BASE (Coinbase L2) and deploys to two environments:
+
+- **Testnet (BASE Sepolia)**: For development and testing (current deployment)
+- **Mainnet (BASE)**: For production (not yet deployed)
+
+## Current Deployment
+
+The production testnet deployment is running on Railway:
+
+| Component | Provider | URL/Address |
+|-----------|----------|-------------|
+| Backend | Railway | `proteus-production-6213.up.railway.app` |
+| Redis | Railway | Internal |
+| Contracts | BASE Sepolia | See [Contract Addresses](#contract-addresses) |
+
+## Railway Deployment
+
+The Flask backend auto-deploys from the `main` branch on GitHub.
+
+### Railway Configuration
+
+<Steps>
+  <Step title="Connect Repository">
+    1. Log in to [Railway](https://railway.app)
+    2. Create a new project
+    3. Connect your GitHub repository
+    4. Select the `main` branch for auto-deployment
+  </Step>
+
+  <Step title="Add Redis">
+    Add a Redis instance to your Railway project:
+
+    1. Click **+ New**
+    2. Select **Database** > **Redis**
+    3. Railway will automatically set the `REDIS_URL` environment variable
+  </Step>
+
+  <Step title="Configure Environment Variables">
+    Set the following environment variables in Railway:
+
+    ```bash
+    # Network
+    NETWORK=base-sepolia
+    CHAIN_ID=84532
+    RPC_URL=https://sepolia.base.org
+
+    # Security
+    JWT_SECRET_KEY=your_secret_key_here
+    SESSION_SECRET=your_session_secret_here
+
+    # Firebase
+    FIREBASE_API_KEY=your_key
+    FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+    FIREBASE_PROJECT_ID=your-project
+    FIREBASE_APP_ID=your_app_id
+
+    # Coinbase
+    COINBASE_PROJECT_ID=your_project_id
+
+    # Contracts
+    DEPLOYER_PRIVATE_KEY=your_private_key
+
+    # X.com API (optional)
+    XCOM_BEARER_TOKEN=your_bearer_token
+
+    # Redis (auto-configured by Railway)
+    REDIS_URL=redis://...
+    ```
+  </Step>
+
+  <Step title="Configure Start Command">
+    Railway uses `railway.json` for configuration. The start command is:
+
+    ```json railway.json
+    {
+      "$schema": "https://railway.app/railway.schema.json",
+      "build": {
+        "builder": "NIXPACKS"
+      },
+      "deploy": {
+        "startCommand": "gunicorn main:app --bind 0.0.0.0:$PORT --workers 4 --timeout 120",
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 10
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Deploy">
+    Push to `main` to trigger automatic deployment:
+
+    ```bash
+    git add .
+    git commit -m "Deploy to Railway"
+    git push origin main
+    ```
+
+    Watch the deployment logs in the Railway dashboard.
+  </Step>
+</Steps>
+
+### Health Checks
+
+Railway monitors the `/health` endpoint:
+
+```bash
+curl https://proteus-production-6213.up.railway.app/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "healthy",
+  "redis": "connected",
+  "blockchain": "connected"
+}
+```
+
+## Contract Deployment
+
+### Deploy to BASE Sepolia Testnet
+
+<Steps>
+  <Step title="Configure Hardhat">
+    Ensure your `hardhat.config.js` includes BASE Sepolia:
+
+    ```javascript hardhat.config.js
+    module.exports = {
+      networks: {
+        baseSepolia: {
+          url: process.env.RPC_URL || "https://sepolia.base.org",
+          accounts: [process.env.DEPLOYER_PRIVATE_KEY],
+          chainId: 84532
+        }
+      }
+    };
+    ```
+  </Step>
+
+  <Step title="Fund Deployer Wallet">
+    Get test ETH from the [BASE Sepolia faucet](https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet).
+
+    Request at least **0.1 ETH** to your deployer wallet.
+  </Step>
+
+  <Step title="Compile Contracts">
+    ```bash
+    npx hardhat compile
+    ```
+  </Step>
+
+  <Step title="Deploy Contracts">
+    Deploy PredictionMarketV2 and related contracts:
+
+    <CodeGroup>
+      ```bash make
+      make deploy-testnet
+      ```
+
+      ```bash npm
+      npm run deploy:testnet
+      ```
+
+      ```bash hardhat
+      npx hardhat run scripts/deploy-genesis-phase1.js --network baseSepolia
+      ```
+    </CodeGroup>
+
+    Save the deployed contract addresses from the output.
+  </Step>
+
+  <Step title="Verify on Basescan">
+    Verify your contracts on Basescan for transparency:
+
+    ```bash
+    npx hardhat verify --network baseSepolia <CONTRACT_ADDRESS>
+    ```
+
+    For contracts with constructor arguments:
+
+    ```bash
+    npx hardhat verify --network baseSepolia <CONTRACT_ADDRESS> "arg1" "arg2"
+    ```
+  </Step>
+</Steps>
+
+### Contract Addresses
+
+Current deployed contracts on BASE Sepolia:
+
+| Contract | Address | Explorer |
+|----------|---------|----------|
+| **PredictionMarketV2** | `0x5174Da96BCA87c78591038DEe9DB1811288c9286` | [View](https://sepolia.basescan.org/address/0x5174Da96BCA87c78591038DEe9DB1811288c9286) |
+| GenesisNFT | `0x1A5D4475881B93e876251303757E60E524286A24` | [View](https://sepolia.basescan.org/address/0x1A5D4475881B93e876251303757E60E524286A24) |
+| PayoutManager | TBD | - |
+
+<Warning>
+  PredictionMarket V1 (`0x667121e8f22570F2c521454D93D6A87e44488d93`) is **deprecated** and should not be used. It lacks a resolution mechanism.
+</Warning>
+
+## Seed Example Markets
+
+The `scripts/seed_examples.py` script creates 6 example markets demonstrating different prediction scenarios:
+
+<Steps>
+  <Step title="Configure Wallets">
+    Set environment variables for test wallets:
+
+    ```bash
+    export OWNER_PRIVATE_KEY=your_owner_key
+    export TEST_WALLET_KEY_1=test_wallet_1
+    export TEST_WALLET_KEY_2=test_wallet_2
+    export TEST_WALLET_KEY_3=test_wallet_3
+    export TEST_WALLET_KEY_4=test_wallet_4
+    export BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
+    ```
+  </Step>
+
+  <Step title="Preview (Dry Run)">
+    See what will be created without sending transactions:
+
+    ```bash
+    python scripts/seed_examples.py --dry-run
+    ```
+  </Step>
+
+  <Step title="Create Markets">
+    Create markets and submissions:
+
+    ```bash
+    python scripts/seed_examples.py
+    ```
+
+    This creates 6 markets with different prediction quality examples.
+  </Step>
+
+  <Step title="Resolve Markets">
+    After markets end, resolve them:
+
+    ```bash
+    python scripts/seed_examples.py --resolve
+    ```
+  </Step>
+</Steps>
+
+## Production Deployment (BASE Mainnet)
+
+Proteus is **not yet deployed to mainnet**. Before mainnet deployment:
+
+<Warning>
+  **DO NOT deploy to mainnet without completing these prerequisites:**
+</Warning>
+
+### Prerequisites Checklist
+
+<Steps>
+  <Step title="Security Audit">
+    - [ ] Complete external security audit of all contracts
+    - [ ] Address all high and medium severity findings
+    - [ ] Get audit report published
+  </Step>
+
+  <Step title="Decentralize Resolution">
+    - [ ] Implement multi-oracle consensus (commit-reveal)
+    - [ ] Add slashing for dishonest oracles
+    - [ ] Require screenshot proofs (IPFS-pinned)
+  </Step>
+
+  <Step title="Production Infrastructure">
+    - [ ] Set up hardware wallet for deployer
+    - [ ] Implement multisig for contract owner (Gnosis Safe 2-of-3)
+    - [ ] Use production RPC (Alchemy/QuickNode)
+    - [ ] Set up monitoring (Sentry, Datadog)
+    - [ ] Configure alerting for critical events
+  </Step>
+
+  <Step title="Real Wallet Integration">
+    - [ ] Replace PBKDF2 shim with Coinbase CDP Server Signer
+    - [ ] Test with real Coinbase wallet credentials
+    - [ ] Implement proper key rotation
+  </Step>
+
+  <Step title="Validate Demand">
+    - [ ] Test on testnet with real users
+    - [ ] Confirm product-market fit
+    - [ ] Gather feedback and iterate
+  </Step>
+</Steps>
+
+### Mainnet Configuration
+
+When ready for mainnet, update environment variables:
+
+```bash .env
+# BASE Mainnet
+NETWORK=base-mainnet
+CHAIN_ID=8453
+RPC_URL=https://base-mainnet.g.alchemy.com/v2/YOUR_API_KEY
+
+# Production security
+DEPLOYER_PRIVATE_KEY=hardware_wallet
+JWT_SECRET_KEY=strong_random_secret
+SESSION_SECRET=strong_random_secret
+
+# Production RPC
+ALCHEMY_API_KEY=your_alchemy_key
+QUICKNODE_URL=your_quicknode_url
+```
+
+### Mainnet Deployment Steps
+
+<Steps>
+  <Step title="Final Testing">
+    Run full test suite and load tests:
+
+    ```bash
+    make test-all
+    locust -f tests/load/locustfile.py
+    ```
+  </Step>
+
+  <Step title="Deploy Contracts">
+    Deploy using hardware wallet:
+
+    ```bash
+    npx hardhat run scripts/deploy-genesis-phase1.js --network baseMainnet
+    ```
+  </Step>
+
+  <Step title="Transfer Ownership to Multisig">
+    Transfer contract ownership to Gnosis Safe:
+
+    ```javascript
+    await contract.transferOwnership(GNOSIS_SAFE_ADDRESS);
+    ```
+  </Step>
+
+  <Step title="Verify Contracts">
+    ```bash
+    npx hardhat verify --network baseMainnet <CONTRACT_ADDRESS>
+    ```
+  </Step>
+
+  <Step title="Monitor">
+    Watch deployment logs and metrics:
+
+    - Contract interactions
+    - Gas usage
+    - Error rates
+    - User activity
+  </Step>
+</Steps>
+
+## Monitoring
+
+### Backend Monitoring
+
+Key metrics to monitor:
+
+- **Response times**: API endpoint latency
+- **Error rates**: 4xx/5xx responses
+- **Redis health**: Connection status, memory usage
+- **Blockchain health**: RPC latency, failed transactions
+
+### Contract Monitoring
+
+Monitor on-chain events:
+
+```javascript
+// Listen for MarketCreated events
+contract.on("MarketCreated", (marketId, creator, actorHandle) => {
+  console.log(`New market: ${marketId} by ${creator}`);
+});
+
+// Listen for MarketResolved events
+contract.on("MarketResolved", (marketId, winnerId) => {
+  console.log(`Market ${marketId} resolved, winner: ${winnerId}`);
+});
+```
+
+## Rollback Procedures
+
+### Backend Rollback
+
+Railway keeps deployment history. To rollback:
+
+1. Go to Railway dashboard
+2. Select your project
+3. Click **Deployments**
+4. Find the last known good deployment
+5. Click **Redeploy**
+
+### Contract Rollback
+
+<Warning>
+  **Smart contracts are immutable.** You cannot rollback a deployed contract.
+</Warning>
+
+Instead:
+
+1. Deploy a new fixed version
+2. Update frontend to use new contract address
+3. Announce migration to users
+4. Consider implementing upgradeable proxies for future deployments
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Local Setup" icon="laptop-code" href="/development/local-setup">
+    Set up your development environment
+  </Card>
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Run the comprehensive test suite
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/development/architecture">
+    Understand the system design
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Explore the API endpoints
+  </Card>
+</CardGroup>

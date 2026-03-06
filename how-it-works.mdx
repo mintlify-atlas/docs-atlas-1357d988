@@ -1,0 +1,502 @@
+---
+title: 'How It Works'
+description: 'Understanding Levenshtein distance scoring and the market lifecycle'
+icon: 'gears'
+---
+
+## The Core Primitive
+
+Proteus implements a novel prediction market structure: **text prediction scored by on-chain Levenshtein distance**. Instead of betting on yes/no outcomes, participants predict the exact character sequence a public figure will post, and the closest match wins on a continuous gradient.
+
+<CardGroup cols={2}>
+  <Card title="Binary Markets (Existing)" icon="toggle-off">
+    **Outcome space:** 2 possibilities
+    
+    **Information density:** 1 bit
+    
+    **Payoff function:** Cliff (right or wrong)
+    
+    **AI impact:** Commoditizes as models converge on same probability
+  </Card>
+  
+  <Card title="Text Prediction (Proteus)" icon="text">
+    **Outcome space:** ~10^554 possibilities
+    
+    **Information density:** 1,840 bits
+    
+    **Payoff function:** Continuous gradient
+    
+    **AI impact:** Deepens as models compete on character-level precision
+  </Card>
+</CardGroup>
+
+## Levenshtein Distance Explained
+
+The Levenshtein distance (edit distance) between two strings is the **minimum number of single-character operations** needed to transform one into the other. Three operations are allowed:
+
+<Steps>
+  <Step title="Insertion">
+    Add a character: `cat` → `ca**r**t` (distance = 1)
+  </Step>
+  
+  <Step title="Deletion">
+    Remove a character: `cart` → `cat` (distance = 1)
+  </Step>
+  
+  <Step title="Substitution">
+    Replace a character: `cat` → `c**u**t` (distance = 1)
+  </Step>
+</Steps>
+
+### Why This Metric?
+
+Levenshtein distance is a **proper metric** on the space of text predictions, satisfying three critical properties:
+
+```math
+For all strings a, b, c:
+
+1. Identity: d_L(a, b) = 0 ⟺ a = b
+2. Symmetry: d_L(a, b) = d_L(b, a)
+3. Triangle inequality: d_L(a, c) ≤ d_L(a, b) + d_L(b, c)
+```
+
+<Accordion title="Why These Properties Matter for Markets">
+**Identity of indiscernibles** ensures perfect predictions (distance 0) are unambiguously identified. No approximation - character-for-character exactness is the only way to achieve zero distance.
+
+**Symmetry** ensures the scoring function doesn't depend on the order of comparison. Computing distance(prediction, actual) gives the same result as distance(actual, prediction).
+
+**Triangle inequality** ensures coherence: a prediction "close" to the actual text cannot simultaneously be "far" from another prediction that is also "close" to the actual text. This prevents pathological scoring scenarios.
+
+Together, these properties create a **continuous payoff surface** where marginal improvements in prediction quality always translate to marginal improvements in expected payout. There is no "close enough" threshold - every edit counts.
+</Accordion>
+
+## The On-Chain Algorithm
+
+The smart contract implements Levenshtein distance using the Wagner-Fischer dynamic programming algorithm with space optimization:
+
+```solidity
+function levenshteinDistance(
+    string memory a,
+    string memory b
+) public pure returns (uint256) {
+    bytes memory bytesA = bytes(a);
+    bytes memory bytesB = bytes(b);
+    
+    uint256 lenA = bytesA.length;
+    uint256 lenB = bytesB.length;
+    
+    // Handle empty strings
+    if (lenA == 0) return lenB;
+    if (lenB == 0) return lenA;
+    
+    // Two-row optimization (O(min(m,n)) space instead of O(m*n))
+    uint256[] memory prevRow = new uint256[](lenB + 1);
+    uint256[] memory currRow = new uint256[](lenB + 1);
+    
+    // Initialize first row: [0, 1, 2, 3, ..., lenB]
+    for (uint256 j = 0; j <= lenB; j++) {
+        prevRow[j] = j;
+    }
+    
+    // Fill the distance matrix
+    for (uint256 i = 1; i <= lenA; i++) {
+        currRow[0] = i;
+        
+        for (uint256 j = 1; j <= lenB; j++) {
+            uint256 cost = (bytesA[i - 1] == bytesB[j - 1]) ? 0 : 1;
+            
+            // Minimum of: deletion, insertion, substitution
+            uint256 deletion = prevRow[j] + 1;
+            uint256 insertion = currRow[j - 1] + 1;
+            uint256 substitution = prevRow[j - 1] + cost;
+            
+            currRow[j] = min3(deletion, insertion, substitution);
+        }
+        
+        // Swap rows for next iteration
+        (prevRow, currRow) = (currRow, prevRow);
+    }
+    
+    return prevRow[lenB];
+}
+```
+
+<Note>
+**Gas Costs** (BASE L2 approximate):
+- 50 characters each: ~400,000 gas
+- 100 characters each: ~1,500,000 gas
+- 280 characters each: ~9,000,000 gas
+
+The contract enforces `MAX_TEXT_LENGTH = 280` to prevent block gas limit DoS attacks.
+</Note>
+
+### Worked Example: Computing Distance
+
+Let's compute the distance between two predictions for an Elon Musk post:
+
+**Actual text:**
+```
+Starship flight 2 is GO for March
+```
+
+**Prediction:**
+```
+Starship flight 2 confirmed for March
+```
+
+<Steps>
+  <Step title="Initialize Matrix">
+    Create a matrix where rows represent characters in the actual text and columns represent characters in the prediction:
+    
+    ```
+         ""  S  t  a  r  s  h  i  p  ...
+    ""    0  1  2  3  4  5  6  7  8  ...
+    S     1  
+    t     2
+    a     3
+    r     4
+    ...
+    ```
+  </Step>
+  
+  <Step title="Fill Matrix">
+    For each cell (i, j), compute the minimum of:
+    - Cell above + 1 (deletion)
+    - Cell to the left + 1 (insertion)
+    - Diagonal cell + cost (substitution, cost = 0 if characters match)
+    
+    The first 17 characters match exactly: "Starship flight 2"
+  </Step>
+  
+  <Step title="Find Mismatches">
+    After "Starship flight 2 ", we have:
+    - Actual: `is GO for March`
+    - Predicted: `confirmed for March`
+    
+    Operations needed:
+    1. Substitute 'i' → 'c'
+    2. Substitute 's' → 'o'
+    3. Insert 'n'
+    4. Substitute ' ' → 'f'
+    5. Substitute 'G' → 'i'
+    6. Substitute 'O' → 'r'
+    7. Insert 'm'
+    8. Insert 'e'
+    9. Delete extra 'd'
+    
+    **Total distance: 8 edits**
+  </Step>
+</Steps>
+
+<Warning>
+The algorithm computes the **minimum** number of edits. There may be multiple paths to transform string A into string B, but Levenshtein distance always returns the shortest one.
+</Warning>
+
+## Market Lifecycle
+
+Markets progress through five phases:
+
+<Steps>
+  <Step title="Creation">
+    Anyone can create a market by calling `createMarket(actorHandle, duration)`:
+    
+    ```solidity
+    function createMarket(
+        string calldata _actorHandle,  // e.g., "@elonmusk"
+        uint256 _duration              // seconds until market ends
+    ) external returns (uint256 marketId)
+    ```
+    
+    **Constraints:**
+    - Duration: 1 hour to 30 days
+    - No ETH required to create
+    - Creator address recorded for fee distribution
+  </Step>
+  
+  <Step title="Submission Phase">
+    Users submit predictions by calling `createSubmission(marketId, predictedText)` with ETH stake:
+    
+    ```solidity
+    function createSubmission(
+        uint256 _marketId,
+        string calldata _predictedText
+    ) external payable returns (uint256 submissionId)
+    ```
+    
+    **Constraints:**
+    - Minimum stake: 0.001 ETH
+    - Maximum text length: 280 characters
+    - Betting cutoff: 1 hour before market end
+    - Empty strings revert (use `__NULL__` for silence prediction)
+    
+    **What happens:**
+    1. ETH transferred to contract
+    2. Submission stored on-chain
+    3. `totalPool` incremented
+    4. `SubmissionCreated` event emitted
+  </Step>
+  
+  <Step title="Market End">
+    When `block.timestamp >= endTime`, submissions are no longer accepted. The market enters a waiting state for oracle resolution.
+    
+    **Edge case:** If only 1 submission exists, anyone can call `refundSingleSubmission(marketId)` for full refund (no fee taken).
+  </Step>
+  
+  <Step title="Oracle Resolution">
+    The contract owner (currently a single EOA, future: decentralized oracle consensus) calls `resolveMarket(marketId, actualText)`:
+    
+    ```solidity
+    function resolveMarket(
+        uint256 _marketId,
+        string calldata _actualText
+    ) external onlyOwner
+    ```
+    
+    **What happens:**
+    1. Requires minimum 2 submissions
+    2. Iterates through all submissions
+    3. Computes Levenshtein distance for each
+    4. Selects winner: `argmin(distance)`
+    5. Tie-breaking: first submitter wins (deterministic)
+    6. Emits `MarketResolved` event with winner ID and distance
+  </Step>
+  
+  <Step title="Payout">
+    The winning submitter calls `claimPayout(submissionId)`:
+    
+    ```solidity
+    function claimPayout(uint256 _submissionId) external nonReentrant
+    ```
+    
+    **Payout calculation:**
+    ```
+    totalPool = sum of all stakes
+    fee = floor(totalPool × 700 / 10000)  // 7%
+    payout = totalPool - fee               // 93% to winner
+    ```
+    
+    The fee is accumulated for pull-based withdrawal (prevents griefing if fee recipient is a malicious contract).
+  </Step>
+</Steps>
+
+## Scoring Examples
+
+Let's examine six scenarios demonstrating different strategic outcomes:
+
+### Example 1: AI Roleplay Dominance
+
+**Market:** What will @elonmusk post about Starship?
+
+**Actual text:**
+```
+Starship flight 2 is GO for March. Humanity becomes multiplanetary or we die trying.
+```
+
+<CodeGroup>
+```text AI Roleplay (Claude) - Distance 12 🏆
+Starship flight 2 confirmed for March. Humanity becomes multiplanetary or dies trying.
+```
+
+```text Human Fan - Distance 59
+The future of humanity is Mars and beyond
+```
+
+```text Random Bot - Distance 72
+a8j3kd9xmz pqlw7 MARS ufk2 rocket lol
+```
+</CodeGroup>
+
+**Analysis:**
+- Claude captures tone, structure, and vocabulary
+- Gets characteristic phrases: "Humanity becomes multiplanetary or ... trying"
+- Misses: "is GO" vs "confirmed" (8 edits), "we die" vs "dies" (4 edits)
+- Human understood the theme but theme doesn't pay - exact wording does
+- Random bot demonstrates anti-spam property: gibberish → distance ≈ max(len(a), len(b))
+
+### Example 2: Insider Information Edge
+
+**Market:** What will @sama post about AGI?
+
+**Actual text:**
+```
+we are now confident AGI is achievable with current techniques. announcement soon.
+```
+
+<CodeGroup>
+```text Ex-OpenAI Engineer - Distance 4 🏆
+we are now confident AGI is achievable with current techniques. big announcement soon.
+```
+
+```text AI Roleplay (GPT) - Distance 18
+we now believe AGI is achievable with current techniques. announcement coming soon.
+```
+</CodeGroup>
+
+**Analysis:**
+- Insider heard the rehearsed phrase "we are now confident"
+- AI generated plausible but incorrect "we now believe"
+- That single phrase difference = 14-edit advantage
+- Information asymmetry is priced continuously, not binary
+
+### Example 3: THE THESIS EXAMPLE - AI vs AI
+
+**Market:** What will @sataborasu (Satya Nadella) post about Copilot?
+
+**Actual text:**
+```
+Copilot is now generating 46% of all new code at GitHub-connected enterprises. The AI transformation of software is just beginning.
+```
+
+<CodeGroup>
+```text Claude Roleplay - Distance 1 🏆
+Copilot is now generating 45% of all new code at GitHub-connected enterprises. The AI transformation of software is just beginning.
+```
+
+```text GPT Roleplay - Distance 8
+Copilot is now generating 43% of all new code at GitHub-connected enterprises. The AI transformation of software has just begun.
+```
+</CodeGroup>
+
+**This is the thesis example.** Two frontier AI models, same public training corpus, same prompt. Claude gets within 1 edit (only difference: "45%" vs "46%"). GPT gets within 8 edits (additionally substitutes "has just begun" for "is just beginning").
+
+The **7-edit gap** between frontier models determines the entire pool. In a binary market, both "predicted correctly" - both said Copilot generates lots of code. Binary markets would split nothing. Levenshtein rewards marginal calibration.
+
+### Example 4: Predicting Silence
+
+**Market:** What will @JensenHuang post?
+
+**Actual result:** *(nothing posted)* - resolved with `__NULL__`
+
+<CodeGroup>
+```text Null Trader - Distance 0 🏆
+__NULL__
+```
+
+```text AI Roleplay - Distance 90
+NVIDIA Blackwell Ultra is sampling ahead of schedule. The next era of computing starts now.
+```
+</CodeGroup>
+
+**Analysis:**
+- Binary markets cannot express "this person will not post"
+- The `__NULL__` sentinel enables betting on inaction
+- AI roleplay agents *always* generate text - structurally incapable of predicting silence
+- Distance 0 (exact match) = entire pool to null trader
+
+## Outcome Space Analysis
+
+The combinatorial explosion of text prediction creates an AI-resistant market structure:
+
+<Accordion title="Mathematical Formulation">
+**Binary market outcome space:**
+```
+|O_binary| = 2
+Information content = log₂(2) = 1 bit
+```
+
+**Text prediction outcome space (280-char ASCII):**
+```
+|O_text| = Σ(k=0 to 280) 95^k ≈ 95^280 ≈ 10^554
+Information content = 280 × log₂(95) ≈ 1,840 bits
+```
+
+**Information density ratio:**
+```
+I_text / I_binary = 1,840 / 1 = 1,840:1
+```
+
+Each text prediction market encodes approximately **1,840 times more information** than a binary market.
+
+For context, the number of atoms in the observable universe is estimated at ~10^80. The text prediction outcome space exceeds this by **474 orders of magnitude**.
+</Accordion>
+
+<Accordion title="Expected Distance for Random Strings">
+For two random strings of lengths m and n over alphabet A:
+
+```
+E[d_L(a, b)] → max(m, n) as |A| → ∞
+```
+
+**Intuition:** When the alphabet is large (e.g., 95 printable ASCII characters), the probability that any two random characters match is ~1.05%. With negligible match probability, the optimal edit strategy is to delete all of string A and insert all of string B, giving distance = max(m, n).
+
+**Implication for spam:** Bots submitting random strings cannot get lucky. The metric itself functions as a spam filter - there is no shortcut in a character-level outcome space.
+
+**Empirical verification:** In Example 1, the random bot prediction `a8j3kd9xmz pqlw7 MARS ufk2 rocket lol` achieves distance 72 against actual text of ~85 characters, close to the theoretical maximum.
+</Accordion>
+
+## Fee Distribution
+
+When a market resolves with 2+ submissions, the winner receives 93% of the total pool. The 7% platform fee (700 basis points) is split:
+
+| Recipient | Share of Fee | Share of Volume |
+|-----------|--------------|-----------------|
+| Genesis NFT Holders | 20.0% | 1.4% |
+| Oracles | 28.6% | 2.0% |
+| Market Creators | 14.3% | 1.0% |
+| Node Operators | 14.3% | 1.0% |
+| Builder Pool | 28.6% | 2.0% |
+
+Fees are accumulated in a **pull-based collection mapping** to prevent griefing attacks where a malicious fee recipient reverts transfers.
+
+<Note>
+**Edge case:** Markets with only 1 submission receive a full refund (no fee) when `refundSingleSubmission()` is called after market end. This prevents unfair fee extraction when there's no competition.
+</Note>
+
+## Tie-Breaking Rules
+
+When multiple submissions achieve the same minimum distance, the **first submitter wins**. The resolution algorithm uses strict less-than comparison:
+
+```solidity
+if (distance < minDistance) {  // Strict less-than
+    minDistance = distance;
+    winningId = subIds[i];
+}
+```
+
+A later submission with equal distance does **not** displace an earlier one. This creates an incentive to submit early and confidently - waiting to see others' submissions provides no advantage since all submissions are committed on-chain before resolution.
+
+## Security Properties
+
+<CardGroup cols={2}>
+  <Card title="Reentrancy Protection" icon="shield">
+    All payment functions use OpenZeppelin's `nonReentrant` modifier. Payouts follow checks-effects-interactions pattern.
+  </Card>
+  
+  <Card title="Pull-Based Fees" icon="hand">
+    Fee recipients call `withdrawFees()` to claim accumulated fees. Prevents griefing via malicious contract fee recipients.
+  </Card>
+  
+  <Card title="Gas Limit Protection" icon="gauge">
+    `MAX_TEXT_LENGTH = 280` prevents DoS via excessively long strings that exceed block gas limit.
+  </Card>
+  
+  <Card title="Deterministic Ordering" icon="list-ol">
+    Tie-breaking by submission ID (chronological) is deterministic and transparent. No oracle discretion in winner selection.
+  </Card>
+</CardGroup>
+
+<Warning>
+**Known Centralization Risk:** The current resolution mechanism uses a single EOA (contract owner) to call `resolveMarket()`. This is the most significant centralization risk in the v0 prototype.
+
+**Planned upgrade:** Decentralized oracle consensus using commit-reveal, with slashing for dishonest oracles and screenshot proof requirements.
+</Warning>
+
+## What's Next?
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api/contracts/prediction-market">
+    Complete function reference for PredictionMarketV2
+  </Card>
+  
+  <Card title="Examples" icon="flask" href="/research/worked-examples">
+    6 worked examples with full transaction data
+  </Card>
+  
+  <Card title="Architecture" icon="sitemap" href="/development/architecture">
+    System design and contract stack overview
+  </Card>
+  
+  <Card title="Whitepaper" icon="file-lines" href="/research/whitepaper">
+    Full research paper with formal analysis
+  </Card>
+</CardGroup>

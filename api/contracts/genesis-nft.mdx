@@ -1,0 +1,434 @@
+---
+title: "Genesis NFT Contract"
+description: "Complete reference for GenesisNFT contract methods"
+---
+
+## Overview
+
+The `GenesisNFT` contract manages a fixed supply of 100 Genesis NFTs that provide founder rewards for the Proteus platform. Each NFT features on-chain generated SVG art and entitles the holder to 0.002% of platform volume.
+
+**Contract Type:** ERC721Enumerable
+
+**Contract Name:** Clockchain Genesis (legacy branding, 60 NFTs already minted)
+
+**Symbol:** GENESIS
+
+**Contract Address:** TBD (Deployment pending)
+
+## Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `MAX_SUPPLY` | 100 | Maximum number of Genesis NFTs |
+| `MINTING_WINDOW` | 24 hours | Duration of minting period after deployment |
+
+---
+
+## Minting Functions
+
+### mint
+
+Mint Genesis NFTs during the minting window.
+
+```solidity
+function mint(address to, uint256 quantity) external
+```
+
+<ParamField path="to" type="address" required>
+  Address to mint NFTs to. Cannot be zero address.
+</ParamField>
+
+<ParamField path="quantity" type="uint256" required>
+  Number of NFTs to mint. Must be between 1 and 10.
+</ParamField>
+
+**Emits:** `GenesisNFTMinted(address indexed to, uint256 tokenId)` for each minted NFT
+
+**Auto-finalization:** Automatically finalizes minting if max supply is reached.
+
+**Requirements:**
+- Minting must not be finalized
+- Current timestamp must be within minting deadline
+- Would not exceed max supply of 100
+- Quantity must be 1-10
+- Recipient address must not be zero
+
+**Errors:**
+- `"Minting has been finalized"` - Minting period ended
+- `"Minting window has expired"` - Past 24-hour window
+- `"Would exceed max supply"` - Not enough NFTs remaining
+- `"Cannot mint to zero address"` - Invalid recipient
+- `"Invalid quantity"` - Quantity not between 1-10
+
+**Example:**
+
+```solidity
+// Mint 5 Genesis NFTs
+genesisNFT.mint(recipient, 5);
+```
+
+---
+
+### finalizeMinting
+
+Finalize minting to prevent any future mints. Can be called by anyone after deadline.
+
+```solidity
+function finalizeMinting() external
+```
+
+**Emits:** `MintingFinalized(uint256 totalMinted)`
+
+**Requirements:**
+- Minting must not already be finalized
+- Either minting deadline passed OR max supply reached
+
+**Errors:**
+- `"Already finalized"` - Minting already finalized
+- `"Cannot finalize yet"` - Deadline not reached and max supply not reached
+
+**Example:**
+
+```solidity
+// Finalize minting after 24 hours
+genesisNFT.finalizeMinting();
+```
+
+---
+
+## NFT Metadata
+
+### tokenURI
+
+Returns the complete on-chain metadata URI for a token.
+
+```solidity
+function tokenURI(uint256 tokenId) public view override returns (string memory)
+```
+
+<ParamField path="tokenId" type="uint256" required>
+  The token ID (1-100)
+</ParamField>
+
+<ResponseField name="uri" type="string">
+  Base64-encoded data URI containing JSON metadata and SVG image
+</ResponseField>
+
+**Returns:** Data URI in format: `data:application/json;base64,{base64EncodedJSON}`
+
+**Metadata Structure:**
+```json
+{
+  "name": "Clockchain Genesis #1",
+  "description": "One of 100 Genesis NFTs providing founder rewards for the Clockchain prediction platform. Each NFT receives 0.002% of platform volume.",
+  "image": "data:image/svg+xml;base64,...",
+  "attributes": [
+    {"trait_type": "Collection", "value": "Genesis"},
+    {"trait_type": "Reward Percentage", "value": "0.002%"},
+    {"trait_type": "Total Supply", "value": "100"},
+    {"trait_type": "Number", "value": 1}
+  ]
+}
+```
+
+**Requirements:**
+- Token must exist (already minted)
+
+**Errors:**
+- `"Token does not exist"` - Token ID not yet minted
+
+---
+
+### generateSVG
+
+Generate on-chain SVG art for a token. Pure function, callable off-chain.
+
+```solidity
+function generateSVG(uint256 tokenId) public pure returns (string memory)
+```
+
+<ParamField path="tokenId" type="uint256" required>
+  The token ID (1-100)
+</ParamField>
+
+<ResponseField name="svg" type="string">
+  Complete SVG markup as a string
+</ResponseField>
+
+**Art Features:**
+- Unique gradient colors derived from token ID
+- Concentric hexagonal patterns with rotation
+- Clock-themed central element with unique angles
+- Glow filter effects
+- Token number display
+- "CLOCKCHAIN FOUNDER" text (legacy branding)
+
+**Requirements:**
+- Token ID must be between 1 and 100
+
+**Errors:**
+- `"Invalid token ID"` - Token ID out of range
+
+**Example:**
+
+```solidity
+string memory svg = genesisNFT.generateSVG(42);
+// Returns: "<svg xmlns=...></svg>"
+```
+
+---
+
+## View Functions
+
+### isMintingActive
+
+Check if minting is currently active.
+
+```solidity
+function isMintingActive() external view returns (bool)
+```
+
+<ResponseField name="active" type="bool">
+  True if minting is active, false otherwise
+</ResponseField>
+
+Returns `true` only if:
+- Minting not finalized
+- Current timestamp within minting deadline
+
+---
+
+### remainingSupply
+
+Get remaining mintable supply.
+
+```solidity
+function remainingSupply() external view returns (uint256)
+```
+
+<ResponseField name="remaining" type="uint256">
+  Number of NFTs still available to mint (0 if finalized)
+</ResponseField>
+
+**Example:**
+
+```solidity
+uint256 remaining = genesisNFT.remainingSupply();
+// Returns: 40 (if 60 already minted)
+```
+
+---
+
+### totalMinted
+
+Get total number of NFTs minted so far.
+
+```solidity
+function totalMinted() external view returns (uint256)
+```
+
+<ResponseField name="minted" type="uint256">
+  Total number of Genesis NFTs minted
+</ResponseField>
+
+**Example:**
+
+```solidity
+uint256 minted = genesisNFT.totalMinted();
+// Returns: 60
+```
+
+---
+
+## State Variables
+
+### mintingDeadline
+
+```solidity
+uint256 public mintingDeadline
+```
+
+Unix timestamp of the minting deadline (deployment time + 24 hours).
+
+---
+
+### mintingFinalized
+
+```solidity
+bool public mintingFinalized
+```
+
+Whether minting has been finalized. Once true, no more minting is possible.
+
+---
+
+## ERC721 Standard Functions
+
+As an ERC721Enumerable contract, GenesisNFT inherits all standard ERC721 functionality:
+
+### balanceOf
+
+```solidity
+function balanceOf(address owner) external view returns (uint256)
+```
+
+Get the number of NFTs owned by an address.
+
+---
+
+### ownerOf
+
+```solidity
+function ownerOf(uint256 tokenId) external view returns (address)
+```
+
+Get the owner of a specific token ID.
+
+---
+
+### transferFrom
+
+```solidity
+function transferFrom(address from, address to, uint256 tokenId) external
+```
+
+Transfer an NFT from one address to another.
+
+---
+
+### safeTransferFrom
+
+```solidity
+function safeTransferFrom(address from, address to, uint256 tokenId) external
+```
+
+Safely transfer an NFT, checking if recipient can receive ERC721 tokens.
+
+---
+
+### approve
+
+```solidity
+function approve(address to, uint256 tokenId) external
+```
+
+Approve another address to transfer a specific NFT.
+
+---
+
+### setApprovalForAll
+
+```solidity
+function setApprovalForAll(address operator, bool approved) external
+```
+
+Approve or revoke an operator to manage all of the caller's NFTs.
+
+---
+
+### getApproved
+
+```solidity
+function getApproved(uint256 tokenId) external view returns (address)
+```
+
+Get the approved address for a specific NFT.
+
+---
+
+### isApprovedForAll
+
+```solidity
+function isApprovedForAll(address owner, address operator) external view returns (bool)
+```
+
+Check if an operator is approved to manage all of an owner's NFTs.
+
+---
+
+## ERC721Enumerable Functions
+
+### totalSupply
+
+```solidity
+function totalSupply() public view returns (uint256)
+```
+
+Get the total number of NFTs currently minted (same as `totalMinted()`).
+
+---
+
+### tokenByIndex
+
+```solidity
+function tokenByIndex(uint256 index) public view returns (uint256)
+```
+
+Get token ID at a specific index in the total supply enumeration.
+
+---
+
+### tokenOfOwnerByIndex
+
+```solidity
+function tokenOfOwnerByIndex(address owner, uint256 index) public view returns (uint256)
+```
+
+Get token ID at a specific index of an owner's token list.
+
+---
+
+## Internal Art Generation Functions
+
+These functions are used internally for SVG generation but are documented for reference:
+
+### generateGeometricPattern
+
+Generates unique geometric patterns with concentric hexagons and clock elements.
+
+```solidity
+function generateGeometricPattern(uint256 tokenId) private pure returns (string memory)
+```
+
+---
+
+### generateHexagonPoints
+
+Generates SVG polygon points for a hexagon.
+
+```solidity
+function generateHexagonPoints(uint256 cx, uint256 cy, uint256 size) private pure returns (string memory)
+```
+
+---
+
+### generateColor
+
+Generates RGB color from a seed value.
+
+```solidity
+function generateColor(uint256 seed) private pure returns (string memory)
+```
+
+---
+
+### cos / sin
+
+Simple trigonometric approximations for common angles (0°, 60°, 120°, 180°, 240°, 300°).
+
+```solidity
+function cos(uint256 angle) private pure returns (int256)
+function sin(uint256 angle) private pure returns (int256)
+```
+
+---
+
+## Reward Distribution
+
+While not implemented in the contract itself, Genesis NFT holders are entitled to platform rewards:
+
+- **Reward per NFT:** 0.002% of platform volume
+- **Total Genesis Rewards:** 0.2% of platform volume (100 NFTs × 0.002%)
+- **Distribution:** Handled off-chain or via separate reward contract
+
+**Note:** Reward claiming functionality is implemented separately from the NFT contract.

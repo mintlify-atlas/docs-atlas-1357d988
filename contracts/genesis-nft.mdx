@@ -1,0 +1,344 @@
+---
+title: GenesisNFT
+description: 100 founder NFTs with on-chain SVG art and platform revenue sharing
+---
+
+## Overview
+
+`GenesisNFT` is an ERC-721 NFT contract with a fixed supply of 100 tokens. Each NFT provides 0.002% of platform volume as ongoing founder rewards. The contract features on-chain SVG art generation with unique visuals for each token.
+
+**Contract Address**: `0x1A5D4475881B93e876251303757E60E524286A24` (BASE Sepolia)
+
+**Current Status**: 60/100 minted, minting finalized
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Fixed Supply" icon="lock">
+    Immutable 100 NFT cap enforced at contract level
+  </Card>
+  <Card title="On-Chain Art" icon="palette">
+    SVG generation entirely on-chain, no IPFS dependencies
+  </Card>
+  <Card title="Revenue Share" icon="money-bill-trend-up">
+    Each NFT receives 0.002% of platform volume
+  </Card>
+  <Card title="Auto-Finalization" icon="check-circle">
+    Minting window and supply cap both trigger finalization
+  </Card>
+</CardGroup>
+
+## Architecture
+
+GenesisNFT.sol:20-43
+```solidity
+contract GenesisNFT is ERC721Enumerable {
+    using Strings for uint256;
+    
+    // Constants
+    uint256 public constant MAX_SUPPLY = 100;
+    uint256 public constant MINTING_WINDOW = 24 hours;
+    
+    // State variables
+    uint256 public mintingDeadline;
+    bool public mintingFinalized;
+    uint256 private _tokenIdCounter;
+    
+    constructor() ERC721("Clockchain Genesis", "GENESIS") {
+        mintingDeadline = block.timestamp + MINTING_WINDOW;
+        _tokenIdCounter = 1; // Start from token ID 1
+    }
+}
+```
+
+<Note>
+**Legacy Name**: The contract was deployed with "Clockchain Genesis" branding before the protocol was renamed to Proteus. The on-chain name is immutable, and 60 NFTs have already been minted with this branding.
+</Note>
+
+## Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `MAX_SUPPLY` | 100 | Maximum number of NFTs that can be minted |
+| `MINTING_WINDOW` | 24 hours | Time window for minting after deployment |
+
+## Core Functions
+
+### mint
+
+Mint Genesis NFTs during the minting window.
+
+<ParamField path="to" type="address">
+  Address to mint NFTs to (cannot be zero address)
+</ParamField>
+
+<ParamField path="quantity" type="uint256">
+  Number of NFTs to mint (1-10 per transaction)
+</ParamField>
+
+GenesisNFT.sol:50-67
+```solidity
+function mint(address to, uint256 quantity) external {
+    require(!mintingFinalized, "Minting has been finalized");
+    require(block.timestamp <= mintingDeadline, "Minting window has expired");
+    require(_tokenIdCounter + quantity - 1 <= MAX_SUPPLY, "Would exceed max supply");
+    require(to != address(0), "Cannot mint to zero address");
+    require(quantity > 0 && quantity <= 10, "Invalid quantity");
+    
+    for (uint256 i = 0; i < quantity; i++) {
+        uint256 tokenId = _tokenIdCounter++;
+        _safeMint(to, tokenId);
+        emit GenesisNFTMinted(to, tokenId);
+    }
+    
+    // Auto-finalize if we hit max supply
+    if (_tokenIdCounter > MAX_SUPPLY) {
+        _finalizeMinting();
+    }
+}
+```
+
+**Requirements**:
+- Minting not yet finalized
+- Within 24-hour minting window
+- Won't exceed max supply of 100
+- Valid recipient address
+- Quantity between 1 and 10
+
+**Events**: `GenesisNFTMinted(address indexed to, uint256 tokenId)`
+
+### finalizeMinting
+
+Finalize minting to prevent any future minting. Callable by anyone after the deadline or when max supply is reached.
+
+GenesisNFT.sol:73-81
+```solidity
+function finalizeMinting() external {
+    require(!mintingFinalized, "Already finalized");
+    require(
+        block.timestamp > mintingDeadline || _tokenIdCounter > MAX_SUPPLY,
+        "Cannot finalize yet"
+    );
+    
+    _finalizeMinting();
+}
+```
+
+**Events**: `MintingFinalized(uint256 totalMinted)`
+
+## On-Chain Art Generation
+
+### generateSVG
+
+Generate unique SVG art for each token ID based on procedural generation.
+
+<ParamField path="tokenId" type="uint256">
+  The token ID to generate art for (1-100)
+</ParamField>
+
+GenesisNFT.sol:95-139
+```solidity
+function generateSVG(uint256 tokenId) public pure returns (string memory) {
+    require(tokenId > 0 && tokenId <= MAX_SUPPLY, "Invalid token ID");
+    
+    // Generate unique colors based on token ID
+    string memory primaryColor = generateColor(tokenId);
+    string memory secondaryColor = generateColor(tokenId + 100);
+    string memory accentColor = generateColor(tokenId + 200);
+    
+    // Create SVG with unique pattern for each NFT
+    string memory svg = string(abi.encodePacked(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500" viewBox="0 0 500 500">',
+        '<defs>',
+        '<linearGradient id="grad', tokenId.toString(), '" x1="0%" y1="0%" x2="100%" y2="100%">',
+        '<stop offset="0%" style="stop-color:', primaryColor, ';stop-opacity:1" />',
+        '<stop offset="50%" style="stop-color:', secondaryColor, ';stop-opacity:1" />',
+        '<stop offset="100%" style="stop-color:', accentColor, ';stop-opacity:1" />',
+        '</linearGradient>',
+        // ... glow filter ...
+        '</defs>',
+        '<rect width="500" height="500" fill="url(#grad', tokenId.toString(), ')"/>',
+        '<g filter="url(#glow)">',
+        generateGeometricPattern(tokenId),
+        '</g>',
+        '<text x="250" y="450" font-family="monospace" font-size="24" fill="white" text-anchor="middle" font-weight="bold">',
+        'GENESIS #', tokenId.toString(),
+        '</text>'
+    ));
+    
+    return svg;
+}
+```
+
+Each NFT features:
+- **Unique color palette** generated from token ID
+- **Concentric hexagons** with rotating angles
+- **Clock-themed elements** (hands, center circle)
+- **Glow effects** applied to geometric patterns
+
+### tokenURI
+
+Returns the complete token metadata with on-chain SVG image encoded as data URI.
+
+GenesisNFT.sol:248-269
+```solidity
+function tokenURI(uint256 tokenId) public view override returns (string memory) {
+    require(tokenId > 0 && tokenId <= _tokenIdCounter - 1, "Token does not exist");
+    
+    string memory svg = generateSVG(tokenId);
+    string memory json = Base64.encode(
+        bytes(
+            string(abi.encodePacked(
+                '{"name": "Clockchain Genesis #', tokenId.toString(), '",',
+                '"description": "One of 100 Genesis NFTs providing founder rewards for the Clockchain prediction platform. Each NFT receives 0.002% of platform volume.",',
+                '"image": "data:image/svg+xml;base64,', Base64.encode(bytes(svg)), '",',
+                '"attributes": [',
+                '{"trait_type": "Collection", "value": "Genesis"},',
+                '{"trait_type": "Reward Percentage", "value": "0.002%"},',
+                '{"trait_type": "Total Supply", "value": "100"},',
+                '{"trait_type": "Number", "value": ', tokenId.toString(), '}',
+                ']}'
+            ))
+        )
+    );
+    
+    return string(abi.encodePacked("data:application/json;base64,", json));
+}
+```
+
+**Returns**: Data URI containing base64-encoded JSON metadata with embedded SVG image
+
+## View Functions
+
+### isMintingActive
+
+Check if minting is currently active.
+
+GenesisNFT.sol:274-276
+```solidity
+function isMintingActive() external view returns (bool) {
+    return !mintingFinalized && block.timestamp <= mintingDeadline;
+}
+```
+
+### remainingSupply
+
+Get the number of NFTs that can still be minted.
+
+GenesisNFT.sol:281-284
+```solidity
+function remainingSupply() external view returns (uint256) {
+    if (mintingFinalized) return 0;
+    return MAX_SUPPLY - (_tokenIdCounter - 1);
+}
+```
+
+### totalMinted
+
+Get the total number of NFTs minted so far.
+
+GenesisNFT.sol:289-291
+```solidity
+function totalMinted() external view returns (uint256) {
+    return _tokenIdCounter - 1;
+}
+```
+
+## Events
+
+```solidity
+event MintingFinalized(uint256 totalMinted);
+event GenesisNFTMinted(address indexed to, uint256 tokenId);
+```
+
+## Revenue Distribution
+
+Genesis NFT holders receive 20% of the 7% platform fee, which equals **1.4% of total platform volume**.
+
+With 100 NFTs, each holder receives **0.002% of platform volume** per NFT owned.
+
+### Example Calculation
+
+If platform volume is 10 ETH:
+- Total platform fee: 10 ETH × 7% = **0.7 ETH**
+- Genesis NFT holder share: 0.7 ETH × 20% = **0.14 ETH**
+- Per NFT: 0.14 ETH ÷ 100 = **0.0014 ETH**
+
+Rewards are distributed by the [DistributedPayoutManager](/contracts/payout-manager) contract.
+
+## Usage Example
+
+```javascript
+const genesisNFT = await ethers.getContractAt(
+  "GenesisNFT",
+  "0x1A5D4475881B93e876251303757E60E524286A24"
+);
+
+// Check if minting is still active
+const isActive = await genesisNFT.isMintingActive();
+console.log("Minting active:", isActive);
+
+// Get remaining supply
+const remaining = await genesisNFT.remainingSupply();
+console.log("NFTs remaining:", remaining.toString());
+
+// Mint NFTs (if window is still open)
+if (isActive && remaining > 0) {
+  const tx = await genesisNFT.mint(myAddress, 1);
+  await tx.wait();
+  console.log("Minted Genesis NFT!");
+}
+
+// Get token metadata
+const tokenId = 1;
+const tokenURI = await genesisNFT.tokenURI(tokenId);
+console.log("Token URI:", tokenURI);
+
+// Generate and view SVG art
+const svg = await genesisNFT.generateSVG(tokenId);
+console.log("SVG:", svg);
+```
+
+## Visual Examples
+
+Each Genesis NFT features unique procedurally-generated art:
+
+- **Token #1**: Purple/blue gradient with tight concentric hexagons
+- **Token #50**: Orange/red gradient with wide hexagon spacing
+- **Token #100**: Green/teal gradient with rotated patterns
+
+All art is generated on-chain from the `generateSVG` function - no external dependencies.
+
+## Current Status
+
+| Metric | Value |
+|--------|-------|
+| Total Minted | 60/100 |
+| Minting Status | Finalized |
+| Minting Deadline | Expired |
+| Remaining Supply | 0 |
+
+Minting is permanently closed. The only way to acquire a Genesis NFT is through secondary markets (OpenSea, etc.).
+
+## Security Considerations
+
+<CardGroup cols={2}>
+  <Card title="No Admin Functions" icon="lock">
+    Contract has zero admin control after deployment - completely decentralized
+  </Card>
+  <Card title="Immutable Supply" icon="shield">
+    MAX_SUPPLY cannot be changed, ensuring scarcity
+  </Card>
+  <Card title="Auto-Finalization" icon="check-circle">
+    Both time and supply caps trigger finalization automatically
+  </Card>
+  <Card title="Safe Minting" icon="hand-holding-heart">
+    Uses _safeMint to prevent minting to contracts that can't handle NFTs
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<Card title="Payout Manager" icon="money-bill" href="/contracts/payout-manager">
+  See how Genesis NFT holders claim their revenue share
+</Card>

@@ -1,0 +1,346 @@
+---
+title: Testing
+description: Run and write tests for Proteus smart contracts and backend
+---
+
+## Test Overview
+
+Proteus has a comprehensive test suite with **259+ passing tests** covering smart contracts, backend services, and integrations.
+
+| Test Suite | Tests | Status |
+|------------|-------|--------|
+| Python Unit | 135 | ✅ Passing |
+| Smart Contracts | 109 | ✅ Passing |
+| Integration | 15 | ✅ Passing (2 expected skips) |
+| **Total** | **259** | **All passing** |
+
+## Quick Start
+
+<CodeGroup>
+  ```bash all-tests
+  # Run all tests (recommended)
+  make test-all
+  ```
+
+  ```bash python-only
+  # Run only Python tests
+  make test
+  ```
+
+  ```bash contracts-only
+  # Run only smart contract tests
+  make test-contracts
+  ```
+</CodeGroup>
+
+## Python Tests
+
+Tests are organized in the `tests/` directory:
+
+```
+tests/
+├── conftest.py          # Shared fixtures
+├── unit/                # Unit tests (no server required)
+│   ├── test_embedded_wallet.py
+│   ├── test_firebase_auth.py
+│   └── test_text_analysis.py
+├── integration/         # Integration tests (require server)
+│   ├── test_api_chain.py
+│   └── test_wallet_auth.py
+└── e2e/                 # End-to-end tests
+```
+
+### Unit Tests
+
+Unit tests run quickly and don't require external services:
+
+<CodeGroup>
+  ```bash make
+  make test-unit
+  ```
+
+  ```bash pytest
+  pytest tests/unit/ -v -m unit
+  ```
+</CodeGroup>
+
+### Integration Tests
+
+Integration tests require a running Flask server:
+
+<Steps>
+  <Step title="Start the Server">
+    In terminal 1, start the Flask server:
+
+    ```bash
+    source .venv/bin/activate
+    python main.py
+    ```
+  </Step>
+
+  <Step title="Run Integration Tests">
+    In terminal 2, run the integration tests:
+
+    ```bash
+    source .venv/bin/activate
+    export TEST_BASE_URL=http://127.0.0.1:5000
+    pytest tests/integration/ -v
+    ```
+
+    Or use the Makefile:
+
+    ```bash
+    make test-integration
+    ```
+  </Step>
+</Steps>
+
+### Test Coverage
+
+Generate a coverage report to see which code is tested:
+
+```bash
+make test-cov
+```
+
+This creates an HTML report at `htmlcov/index.html`.
+
+<Tip>
+  Open the coverage report in your browser:
+
+  ```bash
+  open htmlcov/index.html  # macOS
+  xdg-open htmlcov/index.html  # Linux
+  ```
+</Tip>
+
+### Advanced pytest Usage
+
+Run specific tests with pytest directly:
+
+<CodeGroup>
+  ```bash specific-file
+  # Run specific test file
+  pytest tests/unit/test_embedded_wallet.py -v
+  ```
+
+  ```bash pattern-match
+  # Run tests matching pattern
+  pytest -k "wallet" -v
+  ```
+
+  ```bash markers
+  # Run tests with specific marker
+  pytest -m unit -v
+  pytest -m integration -v
+  ```
+
+  ```bash stop-on-failure
+  # Stop on first failure (fast feedback)
+  pytest tests/unit/ -v -x --tb=short
+  ```
+</CodeGroup>
+
+## Smart Contract Tests
+
+Contract tests are written in JavaScript using Hardhat and cover all Solidity contracts.
+
+### Run All Contract Tests
+
+<CodeGroup>
+  ```bash make
+  make test-contracts
+  ```
+
+  ```bash npm
+  npm test
+  ```
+
+  ```bash hardhat
+  npx hardhat test
+  ```
+</CodeGroup>
+
+### Run Specific Contract Tests
+
+<CodeGroup>
+  ```bash prediction-market
+  # Test PredictionMarketV2
+  make test-market
+  # Or: npx hardhat test contracts/test/PredictionMarket.test.js
+  ```
+
+  ```bash genesis-nft
+  # Test GenesisNFT
+  make test-genesis
+  # Or: npx hardhat test contracts/test/GenesisNFT.test.js
+  ```
+
+  ```bash payout-manager
+  # Test DistributedPayoutManager
+  make test-payout
+  # Or: npx hardhat test contracts/test/DistributedPayoutManager.test.js
+  ```
+</CodeGroup>
+
+### Gas Reporting
+
+See gas costs for each contract function:
+
+```bash
+npx hardhat test --gas-reporter
+```
+
+This shows approximate gas usage for operations like:
+
+| Operation | Approximate Gas |
+|-----------|----------------|
+| Create market | ~150,000 |
+| Submit prediction (50 chars) | ~100,000 |
+| Resolve market (50 chars each) | ~400,000 |
+| Resolve market (280 chars each) | ~9,000,000 |
+| Claim payout | ~50,000 |
+
+<Warning>
+  Levenshtein distance is expensive at scale. Predictions are capped at 280 characters (tweet length) to prevent block gas limit DoS.
+</Warning>
+
+### Solidity Coverage
+
+Generate a coverage report for smart contracts:
+
+```bash
+npx hardhat coverage
+```
+
+Report is generated at `coverage/index.html`.
+
+## Test Markers
+
+Pytest markers help organize and run specific test categories:
+
+| Marker | Description | Usage |
+|--------|-------------|-------|
+| `@pytest.mark.unit` | Fast tests, no external deps | `pytest -m unit` |
+| `@pytest.mark.integration` | Require running server | `pytest -m integration` |
+| `@pytest.mark.e2e` | End-to-end tests | `pytest -m e2e` |
+| `@pytest.mark.slow` | Long-running tests | `pytest -m "not slow"` |
+
+## Continuous Integration
+
+Tests run automatically on every push via GitHub Actions. The CI pipeline:
+
+1. Runs Python linting (flake8)
+2. Runs all unit tests
+3. Runs all contract tests
+4. Runs Slither static analysis
+5. Generates coverage reports
+
+## Writing Tests
+
+### Python Test Example
+
+```python tests/unit/test_example.py
+import pytest
+from services.text_analysis import calculate_levenshtein_distance
+
+@pytest.mark.unit
+def test_levenshtein_distance():
+    """Test Levenshtein distance calculation."""
+    result = calculate_levenshtein_distance("kitten", "sitting")
+    assert result == 3
+
+@pytest.mark.unit
+def test_levenshtein_empty_strings():
+    """Test with empty strings."""
+    result = calculate_levenshtein_distance("", "hello")
+    assert result == 5
+```
+
+### Contract Test Example
+
+```javascript contracts/test/example.test.js
+const { expect } = require("chai");
+const { ethers } = require("hardhat");
+
+describe("PredictionMarketV2", function () {
+  it("Should create a new market", async function () {
+    const [owner] = await ethers.getSigners();
+    const Market = await ethers.getContractFactory("PredictionMarketV2");
+    const market = await Market.deploy();
+    
+    const tx = await market.createMarket(
+      "elonmusk",
+      "What will Elon post?",
+      Math.floor(Date.now() / 1000) + 86400
+    );
+    
+    await expect(tx)
+      .to.emit(market, "MarketCreated")
+      .withArgs(1, owner.address, "elonmusk");
+  });
+});
+```
+
+## Load Testing
+
+Proteus includes load tests using Locust:
+
+```bash
+# Install locust (included in test dependencies)
+pip install -e ".[test]"
+
+# Run load tests
+locust -f tests/load/locustfile.py --host=http://localhost:5000
+```
+
+Open `http://localhost:8089` to configure and run load tests.
+
+## Debugging Tests
+
+### Python Debugging
+
+<CodeGroup>
+  ```bash verbose-output
+  # Verbose output with full tracebacks
+  pytest tests/ -vv --tb=long
+  ```
+
+  ```bash print-debugging
+  # See print statements
+  pytest tests/ -v -s
+  ```
+
+  ```bash pdb
+  # Drop into debugger on failure
+  pytest tests/ -v --pdb
+  ```
+</CodeGroup>
+
+### Contract Debugging
+
+```javascript
+// Add console.log to contracts (Hardhat feature)
+console.log("Market ID:", marketId);
+console.log("Distance:", distance);
+
+// Run tests to see output
+npx hardhat test
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Local Setup" icon="laptop-code" href="/development/local-setup">
+    Set up your development environment
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/development/architecture">
+    Understand the system design
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/development/deployment">
+    Deploy contracts and backend
+  </Card>
+  <Card title="Contributing" icon="code-pull-request" href="/contributing">
+    Contribute to Proteus
+  </Card>
+</CardGroup>

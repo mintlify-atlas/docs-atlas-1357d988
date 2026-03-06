@@ -1,0 +1,325 @@
+---
+title: Authentication
+description: Wallet-based JWT authentication for Proteus API
+---
+
+## Overview
+
+Proteus uses **wallet-based JWT authentication** with two supported methods:
+
+1. **MetaMask/External Wallet** - Sign a message with your wallet
+2. **Coinbase Embedded Wallet** - Email OTP authentication
+
+All authenticated requests include:
+
+```
+Authorization: Bearer <jwt_token>
+```
+
+## MetaMask Authentication Flow
+
+### Step 1: Get Nonce
+
+Request a unique nonce for your wallet address.
+
+```bash cURL
+curl https://api.proteus.com/auth/nonce/0x1234567890abcdef1234567890abcdef12345678
+```
+
+<ParamField path="address" type="string" required>
+  Your Ethereum wallet address (checksummed format recommended)
+</ParamField>
+
+<ResponseField name="nonce" type="string">
+  Unique 32-character hex string for this authentication attempt
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Complete message to sign with your wallet
+</ResponseField>
+
+### Response
+
+```json
+{
+  "nonce": "abc123def456...",
+  "message": "Sign this message to authenticate with Proteus: abc123def456..."
+}
+```
+
+### Step 2: Sign Message
+
+Sign the message with your wallet (client-side):
+
+```javascript JavaScript
+const signature = await ethereum.request({
+  method: 'personal_sign',
+  params: [message, address]
+});
+```
+
+### Step 3: Verify Signature
+
+Submit the signature to receive a JWT token.
+
+```bash cURL
+curl -X POST https://api.proteus.com/auth/verify \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "0x1234567890abcdef1234567890abcdef12345678",
+    "signature": "0xabcdef...",
+    "message": "Sign this message to authenticate with Proteus: abc123def456..."
+  }'
+```
+
+<ParamField body="address" type="string" required>
+  Your Ethereum wallet address
+</ParamField>
+
+<ParamField body="signature" type="string" required>
+  Hex-encoded signature from personal_sign
+</ParamField>
+
+<ParamField body="message" type="string" required>
+  The exact message that was signed
+</ParamField>
+
+<ResponseField name="token" type="string">
+  JWT token for authenticated requests (expires in 24 hours)
+</ResponseField>
+
+<ResponseField name="address" type="string">
+  Verified wallet address
+</ResponseField>
+
+<ResponseField name="expires_in" type="number">
+  Token expiry time in seconds (86400 for 24 hours)
+</ResponseField>
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "address": "0x1234567890abcdef1234567890abcdef12345678",
+    "expires_in": 86400
+  }
+}
+```
+
+## Coinbase Embedded Wallet Flow
+
+### Step 1: Request OTP
+
+Send an OTP code to the user's email.
+
+```bash cURL
+curl -X POST https://api.proteus.com/api/embedded/auth/send-otp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com"
+  }'
+```
+
+<ParamField body="email" type="string" required>
+  User's email address
+</ParamField>
+
+### Response
+
+```json
+{
+  "success": true,
+  "message": "OTP sent successfully"
+}
+```
+
+### Step 2: Verify OTP
+
+Submit the 6-digit OTP code to authenticate.
+
+```bash cURL
+curl -X POST https://api.proteus.com/api/embedded/auth/verify-otp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com",
+    "otp": "123456"
+  }'
+```
+
+<ParamField body="email" type="string" required>
+  User's email address
+</ParamField>
+
+<ParamField body="otp" type="string" required>
+  6-digit OTP code from email
+</ParamField>
+
+<ResponseField name="email" type="string">
+  Verified email address
+</ResponseField>
+
+<ResponseField name="wallet_address" type="string">
+  Generated deterministic wallet address for this email
+</ResponseField>
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "email": "user@example.com",
+    "wallet_address": "0x9876543210fedcba9876543210fedcba98765432"
+  },
+  "message": "Successfully authenticated"
+}
+```
+
+## Token Management
+
+### Refresh Token
+
+Refresh your JWT token before it expires.
+
+```bash cURL
+curl -X POST https://api.proteus.com/auth/refresh \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.new_token...",
+    "address": "0x1234567890abcdef1234567890abcdef12345678",
+    "expires_in": 86400
+  }
+}
+```
+
+### Check Auth Status (JWT)
+
+```bash cURL
+curl https://api.proteus.com/auth/jwt-status \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Response
+
+```json
+{
+  "authenticated": true,
+  "address": "0x1234567890abcdef1234567890abcdef12345678"
+}
+```
+
+### Check Auth Status (Session)
+
+For Coinbase Embedded Wallet users with session cookies:
+
+```bash cURL
+curl https://api.proteus.com/api/embedded/auth/status \
+  --cookie "session=..."
+```
+
+### Response
+
+```json
+{
+  "authenticated": true,
+  "email": "user@example.com",
+  "wallet_address": "0x9876543210fedcba9876543210fedcba98765432",
+  "wallet_type": "coinbase"
+}
+```
+
+### Logout
+
+```bash cURL
+curl -X POST https://api.proteus.com/auth/logout \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+<Info>
+For JWT-based auth, the client should discard the token on logout. The server logs the event but does not invalidate the token (stateless design).
+</Info>
+
+## Rate Limiting
+
+### OTP Request Limits
+
+- **5 OTP requests per email per hour**
+- Returns `429 Too Many Requests` if exceeded
+
+### OTP Verification Limits
+
+- **5 failed attempts per email per hour**
+- Account locked for 1 hour after 5 failures
+
+### Error Response
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many OTP requests. Please try again later."
+  }
+}
+```
+
+## Security Notes
+
+<Warning>
+- Never share your JWT token or signature
+- Tokens expire after 24 hours for security
+- Nonces are single-use only (5 minute TTL)
+- OTP codes expire after 10 minutes
+- Always use HTTPS in production
+</Warning>
+
+## Implementation Example
+
+```javascript JavaScript
+// MetaMask authentication
+async function authenticateWithMetaMask() {
+  // 1. Get wallet address
+  const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+  const address = accounts[0];
+  
+  // 2. Request nonce
+  const nonceRes = await fetch(`/auth/nonce/${address}`);
+  const { nonce, message } = await nonceRes.json();
+  
+  // 3. Sign message
+  const signature = await ethereum.request({
+    method: 'personal_sign',
+    params: [message, address]
+  });
+  
+  // 4. Verify signature
+  const verifyRes = await fetch('/auth/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address, signature, message })
+  });
+  
+  const { data } = await verifyRes.json();
+  return data.token; // Store this token for API requests
+}
+
+// Use the token
+async function fetchMarketsAuthenticated(token) {
+  const res = await fetch('/api/chain/markets', {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  return res.json();
+}
+```

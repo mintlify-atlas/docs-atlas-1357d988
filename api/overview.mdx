@@ -1,0 +1,157 @@
+---
+title: REST API Overview
+description: Complete REST API reference for Proteus prediction markets
+---
+
+## Base URL
+
+All API endpoints are prefixed with:
+
+```
+/api/chain/
+```
+
+## Architecture
+
+The Proteus REST API is built on a **blockchain-first architecture**:
+
+- All data is fetched directly from BASE blockchain contracts
+- No database dependencies for read operations
+- Real-time on-chain data through Web3 integration
+- Responses include `"source": "blockchain"` to indicate data origin
+
+## Response Format
+
+### Success Response
+
+```json
+{
+  "success": true,
+  "data": {},
+  "message": "Optional success message"
+}
+```
+
+### Error Response
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable error message",
+    "details": {}
+  }
+}
+```
+
+## Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `VALIDATION_ERROR` | 400 | Invalid input data or missing required fields |
+| `INVALID_REQUEST` | 400 | Malformed request |
+| `UNAUTHORIZED` | 401 | Invalid or missing authentication |
+| `INVALID_TOKEN` | 401 | JWT token is invalid |
+| `TOKEN_EXPIRED` | 401 | JWT token or OTP has expired |
+| `INVALID_SIGNATURE` | 401 | Wallet signature verification failed |
+| `FORBIDDEN` | 403 | Permission denied |
+| `NOT_FOUND` | 404 | Resource not found |
+| `RATE_LIMITED` | 429 | Too many requests |
+| `INTERNAL_ERROR` | 500 | Unexpected server error |
+| `BLOCKCHAIN_ERROR` | 500 | RPC or chain interaction failed |
+| `CONTRACT_ERROR` | 500 | Smart contract call failed |
+| `SERVICE_UNAVAILABLE` | 503 | Service temporarily unavailable |
+
+## Market-Specific Errors
+
+| Code | Description |
+|------|-------------|
+| `MARKET_NOT_FOUND` | Market does not exist |
+| `MARKET_ENDED` | Market has already ended |
+| `MARKET_NOT_ENDED` | Market has not ended yet |
+| `MARKET_RESOLVED` | Market is already resolved |
+| `INSUFFICIENT_FUNDS` | Not enough ETH for operation |
+
+## Rate Limits
+
+| User Type | Limit |
+|-----------|-------|
+| Default | 100 req/min |
+| Genesis Holder | 500 req/min |
+
+## Caching
+
+Responses are cached in Redis to improve performance:
+
+| Data Type | TTL |
+|-----------|-----|
+| Actors | 5 minutes |
+| Markets | 30 seconds |
+| Stats | 10 seconds |
+| Genesis NFT | 1 minute |
+
+## Contract Addresses
+
+### BASE Sepolia (Testnet)
+
+| Contract | Address | Status |
+|----------|---------|--------|
+| **PredictionMarketV2** | `0x5174Da96BCA87c78591038DEe9DB1811288c9286` | **Recommended** |
+| GenesisNFT | `0x1A5D4475881B93e876251303757E60E524286A24` | Active |
+| ActorRegistry | `0xC71CC19C5573C5E1E144829800cD0005D0eDB723` | Active |
+| DecentralizedOracle | `0x7EF22e27D44E3f4Cc2f133BB4ab2065D180be3C1` | Active |
+| PayoutManager | `0x88d399C949Ff2f1aaa8eA5a859Ae4d97c74f6871` | Active |
+
+### BASE Mainnet
+
+Not yet deployed.
+
+## Health Check
+
+<CodeGroup>
+```bash cURL
+curl https://api.proteus.com/api/health
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.proteus.com/api/health');
+const data = await response.json();
+console.log(data.status);
+```
+
+```python Python
+import requests
+
+response = requests.get('https://api.proteus.com/api/health')
+data = response.json()
+print(data['status'])
+```
+</CodeGroup>
+
+### Response
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-03-06T12:00:00Z",
+  "service": "proteus-node"
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Set up wallet-based JWT authentication
+  </Card>
+  <Card title="Markets" icon="chart-line" href="/api/markets">
+    Query prediction markets from the blockchain
+  </Card>
+  <Card title="Predictions" icon="crystal-ball" href="/api/predictions">
+    Submit and track predictions
+  </Card>
+  <Card title="Actors" icon="user" href="/api/actors">
+    Get registered actor data
+  </Card>
+</CardGroup>

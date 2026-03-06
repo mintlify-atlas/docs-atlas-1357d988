@@ -1,0 +1,517 @@
+---
+title: "Contract Events"
+description: "Complete reference for all contract events emitted by Proteus smart contracts"
+---
+
+## Overview
+
+This page documents all events emitted by the Proteus smart contracts. Events provide a way to track on-chain activity and can be efficiently queried using blockchain indexers.
+
+---
+
+## PredictionMarketV2 Events
+
+### MarketCreated
+
+Emitted when a new prediction market is created.
+
+```solidity
+event MarketCreated(
+    uint256 indexed marketId,
+    string actorHandle,
+    uint256 endTime,
+    address creator
+)
+```
+
+<ParamField path="marketId" type="uint256" indexed>
+  The ID of the newly created market
+</ParamField>
+
+<ParamField path="actorHandle" type="string">
+  Social media handle being predicted
+</ParamField>
+
+<ParamField path="endTime" type="uint256">
+  Unix timestamp when the market ends
+</ParamField>
+
+<ParamField path="creator" type="address">
+  Address that created the market
+</ParamField>
+
+**Emitted by:** `createMarket()`
+
+**Example Usage:**
+
+```javascript
+// Listen for new markets
+predictionMarket.on("MarketCreated", (marketId, actorHandle, endTime, creator) => {
+  console.log(`New market ${marketId} for ${actorHandle}`);
+  console.log(`Ends at: ${new Date(endTime * 1000)}`);
+});
+```
+
+---
+
+### SubmissionCreated
+
+Emitted when a user submits a prediction to a market.
+
+```solidity
+event SubmissionCreated(
+    uint256 indexed submissionId,
+    uint256 indexed marketId,
+    address submitter,
+    string predictedText,
+    uint256 amount
+)
+```
+
+<ParamField path="submissionId" type="uint256" indexed>
+  The ID of the newly created submission
+</ParamField>
+
+<ParamField path="marketId" type="uint256" indexed>
+  The market this submission belongs to
+</ParamField>
+
+<ParamField path="submitter" type="address">
+  Address that created the submission
+</ParamField>
+
+<ParamField path="predictedText" type="string">
+  The predicted text
+</ParamField>
+
+<ParamField path="amount" type="uint256">
+  ETH staked on this prediction (in wei)
+</ParamField>
+
+**Emitted by:** `createSubmission()`
+
+**Example Usage:**
+
+```javascript
+// Listen for submissions on a specific market
+const marketFilter = predictionMarket.filters.SubmissionCreated(null, marketId);
+predictionMarket.on(marketFilter, (submissionId, marketId, submitter, predictedText, amount) => {
+  console.log(`New submission ${submissionId}: "${predictedText}"`);
+  console.log(`Stake: ${ethers.formatEther(amount)} ETH`);
+});
+```
+
+---
+
+### MarketResolved
+
+Emitted when a market is resolved with the actual text.
+
+```solidity
+event MarketResolved(
+    uint256 indexed marketId,
+    uint256 winningSubmissionId,
+    string actualText,
+    uint256 winningDistance
+)
+```
+
+<ParamField path="marketId" type="uint256" indexed>
+  The market that was resolved
+</ParamField>
+
+<ParamField path="winningSubmissionId" type="uint256">
+  The ID of the winning submission
+</ParamField>
+
+<ParamField path="actualText" type="string">
+  The actual text the actor posted
+</ParamField>
+
+<ParamField path="winningDistance" type="uint256">
+  Levenshtein distance of the winning prediction
+</ParamField>
+
+**Emitted by:** `resolveMarket()`
+
+**Example Usage:**
+
+```javascript
+// Listen for market resolutions
+predictionMarket.on("MarketResolved", (marketId, winningSubmissionId, actualText, winningDistance) => {
+  console.log(`Market ${marketId} resolved!`);
+  console.log(`Winner: Submission #${winningSubmissionId}`);
+  console.log(`Actual text: "${actualText}"`);
+  console.log(`Edit distance: ${winningDistance}`);
+});
+```
+
+---
+
+### PayoutClaimed
+
+Emitted when a winner claims their payout.
+
+```solidity
+event PayoutClaimed(
+    uint256 indexed submissionId,
+    address indexed claimer,
+    uint256 amount
+)
+```
+
+<ParamField path="submissionId" type="uint256" indexed>
+  The winning submission being claimed
+</ParamField>
+
+<ParamField path="claimer" type="address" indexed>
+  Address claiming the payout
+</ParamField>
+
+<ParamField path="amount" type="uint256">
+  Amount paid out (in wei)
+</ParamField>
+
+**Emitted by:** `claimPayout()`
+
+**Example Usage:**
+
+```javascript
+// Listen for payout claims
+predictionMarket.on("PayoutClaimed", (submissionId, claimer, amount) => {
+  console.log(`Submission ${submissionId} claimed!`);
+  console.log(`Winner: ${claimer}`);
+  console.log(`Payout: ${ethers.formatEther(amount)} ETH`);
+});
+```
+
+---
+
+### SingleSubmissionRefunded
+
+Emitted when a market with only one submission is refunded.
+
+```solidity
+event SingleSubmissionRefunded(
+    uint256 indexed marketId,
+    uint256 indexed submissionId,
+    address submitter,
+    uint256 amount
+)
+```
+
+<ParamField path="marketId" type="uint256" indexed>
+  The market with single submission
+</ParamField>
+
+<ParamField path="submissionId" type="uint256" indexed>
+  The submission being refunded
+</ParamField>
+
+<ParamField path="submitter" type="address">
+  Address receiving the refund
+</ParamField>
+
+<ParamField path="amount" type="uint256">
+  Amount refunded (in wei)
+</ParamField>
+
+**Emitted by:** `refundSingleSubmission()` and `emergencyWithdraw()`
+
+**Example Usage:**
+
+```javascript
+// Listen for single submission refunds
+predictionMarket.on("SingleSubmissionRefunded", (marketId, submissionId, submitter, amount) => {
+  console.log(`Market ${marketId} had only one submission`);
+  console.log(`Refunded ${ethers.formatEther(amount)} ETH to ${submitter}`);
+});
+```
+
+---
+
+### FeesWithdrawn
+
+Emitted when accumulated fees are withdrawn.
+
+```solidity
+event FeesWithdrawn(
+    address indexed recipient,
+    uint256 amount
+)
+```
+
+<ParamField path="recipient" type="address" indexed>
+  Address withdrawing fees
+</ParamField>
+
+<ParamField path="amount" type="uint256">
+  Amount withdrawn (in wei)
+</ParamField>
+
+**Emitted by:** `withdrawFees()`
+
+**Example Usage:**
+
+```javascript
+// Listen for fee withdrawals
+predictionMarket.on("FeesWithdrawn", (recipient, amount) => {
+  console.log(`${recipient} withdrew ${ethers.formatEther(amount)} ETH in fees`);
+});
+```
+
+---
+
+## GenesisNFT Events
+
+### GenesisNFTMinted
+
+Emitted when a Genesis NFT is minted.
+
+```solidity
+event GenesisNFTMinted(
+    address indexed to,
+    uint256 tokenId
+)
+```
+
+<ParamField path="to" type="address" indexed>
+  Address receiving the NFT
+</ParamField>
+
+<ParamField path="tokenId" type="uint256">
+  The token ID that was minted
+</ParamField>
+
+**Emitted by:** `mint()`
+
+**Example Usage:**
+
+```javascript
+// Listen for Genesis NFT mints
+genesisNFT.on("GenesisNFTMinted", (to, tokenId) => {
+  console.log(`Genesis #${tokenId} minted to ${to}`);
+});
+```
+
+---
+
+### MintingFinalized
+
+Emitted when minting is finalized.
+
+```solidity
+event MintingFinalized(
+    uint256 totalMinted
+)
+```
+
+<ParamField path="totalMinted" type="uint256">
+  Total number of NFTs that were minted
+</ParamField>
+
+**Emitted by:** `finalizeMinting()` and automatically by `mint()` when max supply is reached
+
+**Example Usage:**
+
+```javascript
+// Listen for minting finalization
+genesisNFT.on("MintingFinalized", (totalMinted) => {
+  console.log(`Minting finalized with ${totalMinted} Genesis NFTs`);
+});
+```
+
+---
+
+## Standard ERC721 Events
+
+The GenesisNFT contract also emits standard ERC721 events:
+
+### Transfer
+
+Emitted when an NFT is transferred.
+
+```solidity
+event Transfer(
+    address indexed from,
+    address indexed to,
+    uint256 indexed tokenId
+)
+```
+
+<ParamField path="from" type="address" indexed>
+  Address transferring the NFT (zero address for minting)
+</ParamField>
+
+<ParamField path="to" type="address" indexed>
+  Address receiving the NFT
+</ParamField>
+
+<ParamField path="tokenId" type="uint256" indexed>
+  The token ID being transferred
+</ParamField>
+
+**Emitted by:** `transferFrom()`, `safeTransferFrom()`, and `mint()`
+
+---
+
+### Approval
+
+Emitted when an NFT is approved for transfer.
+
+```solidity
+event Approval(
+    address indexed owner,
+    address indexed approved,
+    uint256 indexed tokenId
+)
+```
+
+<ParamField path="owner" type="address" indexed>
+  Current owner of the NFT
+</ParamField>
+
+<ParamField path="approved" type="address" indexed>
+  Address approved to transfer the NFT
+</ParamField>
+
+<ParamField path="tokenId" type="uint256" indexed>
+  The token ID being approved
+</ParamField>
+
+**Emitted by:** `approve()`
+
+---
+
+### ApprovalForAll
+
+Emitted when an operator is approved/revoked for all of an owner's NFTs.
+
+```solidity
+event ApprovalForAll(
+    address indexed owner,
+    address indexed operator,
+    bool approved
+)
+```
+
+<ParamField path="owner" type="address" indexed>
+  Owner of the NFTs
+</ParamField>
+
+<ParamField path="operator" type="address" indexed>
+  Address being approved/revoked as operator
+</ParamField>
+
+<ParamField path="approved" type="bool">
+  True if operator is approved, false if revoked
+</ParamField>
+
+**Emitted by:** `setApprovalForAll()`
+
+---
+
+## Event Querying Examples
+
+### Query Past Events
+
+```javascript
+// Get all markets created in the last 24 hours
+const currentBlock = await provider.getBlockNumber();
+const blocksPerDay = 7200; // ~12 second blocks
+const fromBlock = currentBlock - blocksPerDay;
+
+const marketEvents = await predictionMarket.queryFilter(
+  predictionMarket.filters.MarketCreated(),
+  fromBlock
+);
+
+marketEvents.forEach(event => {
+  console.log(`Market ${event.args.marketId}: ${event.args.actorHandle}`);
+});
+```
+
+---
+
+### Track User Activity
+
+```javascript
+// Get all submissions by a specific user
+const userAddress = "0x...";
+const allSubmissions = await predictionMarket.queryFilter(
+  predictionMarket.filters.SubmissionCreated(null, null, userAddress)
+);
+
+console.log(`User has made ${allSubmissions.length} predictions`);
+```
+
+---
+
+### Monitor Market Resolution
+
+```javascript
+// Wait for a specific market to be resolved
+const marketId = 42;
+const resolvedEvent = await new Promise((resolve) => {
+  predictionMarket.once(
+    predictionMarket.filters.MarketResolved(marketId),
+    resolve
+  );
+});
+
+console.log(`Market ${marketId} resolved!`);
+console.log(`Winner: ${resolvedEvent.args.winningSubmissionId}`);
+```
+
+---
+
+## Event Indexing
+
+For production applications, consider using event indexing services:
+
+- **The Graph**: Create a subgraph to index and query events efficiently
+- **Moralis**: Real-time event streaming and historical queries
+- **Alchemy Notify**: Webhook notifications for specific events
+- **Etherscan**: View all events via the blockchain explorer
+
+### Example Subgraph Schema
+
+```graphql
+type Market @entity {
+  id: ID!
+  marketId: BigInt!
+  actorHandle: String!
+  endTime: BigInt!
+  creator: Bytes!
+  submissions: [Submission!]! @derivedFrom(field: "market")
+  resolved: Boolean!
+  winningSubmission: Submission
+  totalPool: BigInt!
+}
+
+type Submission @entity {
+  id: ID!
+  submissionId: BigInt!
+  market: Market!
+  submitter: Bytes!
+  predictedText: String!
+  amount: BigInt!
+  claimed: Boolean!
+}
+```
+
+---
+
+## Best Practices
+
+1. **Use Indexed Parameters**: Query events efficiently using indexed parameters (marked with `indexed` keyword)
+
+2. **Block Range Limits**: Most RPC providers limit event queries to 10,000 blocks at a time
+
+3. **Event Confirmation**: Wait for multiple block confirmations before considering events finalized
+
+4. **Error Handling**: Events may not be available immediately; implement retry logic
+
+5. **Local Caching**: Cache event data to reduce RPC calls and improve performance
+
+6. **Websocket Subscriptions**: Use websockets for real-time event monitoring instead of polling

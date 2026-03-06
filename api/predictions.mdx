@@ -1,0 +1,333 @@
+---
+title: Predictions
+description: Submit and track prediction submissions
+---
+
+<Warning>
+Prediction submission endpoints are **write operations** that interact directly with the blockchain. You must have:
+
+1. A funded wallet with ETH on BASE network
+2. Sufficient ETH for gas fees + stake amount
+3. A Web3 provider configured (MetaMask, WalletConnect, etc.)
+
+The API does not submit transactions on your behalf. Use Web3 libraries to interact with the smart contracts.
+</Warning>
+
+## Submit a Prediction
+
+To submit a prediction, you must interact directly with the `EnhancedPredictionMarket` contract.
+
+### Contract Method
+
+```solidity
+function submitPrediction(
+  uint256 marketId,
+  string memory predictedText
+) external payable
+```
+
+<ParamField body="marketId" type="uint256" required>
+  The ID of the market to submit a prediction for
+</ParamField>
+
+<ParamField body="predictedText" type="string" required>
+  Your predicted text (what you think the actor will say)
+</ParamField>
+
+<ParamField body="msg.value" type="uint256" required>
+  Stake amount in wei (sent as transaction value)
+</ParamField>
+
+### Using Web3.js
+
+```javascript JavaScript
+import { ethers } from 'ethers';
+
+// Contract ABI (simplified)
+const marketABI = [
+  "function submitPrediction(uint256 marketId, string memory predictedText) external payable"
+];
+
+// Connect to contract
+const provider = new ethers.BrowserProvider(window.ethereum);
+const signer = await provider.getSigner();
+const marketContract = new ethers.Contract(
+  '0x6b67cb0daaf78f63bd11195df0fd9ffe4361b93c', // Contract address
+  marketABI,
+  signer
+);
+
+// Submit prediction
+const tx = await marketContract.submitPrediction(
+  1, // marketId
+  "Mars is the future of humanity", // predictedText
+  { value: ethers.parseEther("0.1") } // 0.1 ETH stake
+);
+
+// Wait for confirmation
+const receipt = await tx.wait();
+console.log('Prediction submitted:', receipt.transactionHash);
+```
+
+### Using Python (web3.py)
+
+```python Python
+from web3 import Web3
+import os
+
+# Connect to BASE Sepolia
+w3 = Web3(Web3.HTTPProvider('https://sepolia.base.org'))
+
+# Load contract
+market_address = '0x6b67cb0daaf78f63bd11195df0fd9ffe4361b93c'
+market_abi = [...] # Load from contract artifacts
+market_contract = w3.eth.contract(address=market_address, abi=market_abi)
+
+# Build transaction
+account = w3.eth.account.from_key(os.environ['PRIVATE_KEY'])
+tx = market_contract.functions.submitPrediction(
+    1,  # market_id
+    "Mars is the future of humanity"  # predicted_text
+).build_transaction({
+    'from': account.address,
+    'value': w3.to_wei(0.1, 'ether'),  # 0.1 ETH stake
+    'gas': 200000,
+    'gasPrice': w3.eth.gas_price,
+    'nonce': w3.eth.get_transaction_count(account.address)
+})
+
+# Sign and send
+signed_tx = account.sign_transaction(tx)
+tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+print(f'Prediction submitted: {receipt.transactionHash.hex()}')
+```
+
+## Place a Bet
+
+Bet on an existing prediction submission.
+
+### Contract Method
+
+```solidity
+function placeBet(
+  uint256 marketId,
+  uint256 submissionId
+) external payable
+```
+
+<ParamField body="marketId" type="uint256" required>
+  The market ID
+</ParamField>
+
+<ParamField body="submissionId" type="uint256" required>
+  The submission ID to bet on (0-indexed)
+</ParamField>
+
+<ParamField body="msg.value" type="uint256" required>
+  Bet amount in wei
+</ParamField>
+
+### Using Web3.js
+
+```javascript JavaScript
+import { ethers } from 'ethers';
+
+const marketABI = [
+  "function placeBet(uint256 marketId, uint256 submissionId) external payable"
+];
+
+const provider = new ethers.BrowserProvider(window.ethereum);
+const signer = await provider.getSigner();
+const marketContract = new ethers.Contract(
+  '0x6b67cb0daaf78f63bd11195df0fd9ffe4361b93c',
+  marketABI,
+  signer
+);
+
+// Place bet
+const tx = await marketContract.placeBet(
+  1,  // marketId
+  0,  // submissionId
+  { value: ethers.parseEther("0.05") } // 0.05 ETH bet
+);
+
+const receipt = await tx.wait();
+console.log('Bet placed:', receipt.transactionHash);
+```
+
+## Query Your Submissions
+
+Fetch submissions made by a specific address from the blockchain.
+
+```javascript JavaScript
+// Listen for SubmissionCreated events filtered by creator
+const filter = marketContract.filters.SubmissionCreated(
+  null,  // marketId (null = all markets)
+  null,  // submissionId
+  myAddress  // creator filter
+);
+
+const events = await marketContract.queryFilter(filter);
+
+const mySubmissions = events.map(event => ({
+  marketId: event.args.marketId,
+  submissionId: event.args.submissionId,
+  predictedText: event.args.predictedText,
+  stake: ethers.formatEther(event.args.stake),
+  blockNumber: event.blockNumber
+}));
+
+console.log('My submissions:', mySubmissions);
+```
+
+## Query Your Bets
+
+Fetch bets placed by a specific address.
+
+```javascript JavaScript
+// Listen for BetPlaced events filtered by bettor
+const filter = marketContract.filters.BetPlaced(
+  null,  // marketId
+  null,  // submissionId
+  myAddress  // bettor filter
+);
+
+const events = await marketContract.queryFilter(filter);
+
+const myBets = events.map(event => ({
+  marketId: event.args.marketId,
+  submissionId: event.args.submissionId,
+  amount: ethers.formatEther(event.args.amount),
+  blockNumber: event.blockNumber
+}));
+
+console.log('My bets:', myBets);
+```
+
+## Contract Events
+
+The EnhancedPredictionMarket contract emits these events:
+
+### SubmissionCreated
+
+```solidity
+event SubmissionCreated(
+  uint256 indexed marketId,
+  uint256 indexed submissionId,
+  address indexed creator,
+  string predictedText,
+  uint256 stake
+);
+```
+
+### BetPlaced
+
+```solidity
+event BetPlaced(
+  uint256 indexed marketId,
+  uint256 indexed submissionId,
+  address indexed bettor,
+  uint256 amount
+);
+```
+
+### MarketResolved
+
+```solidity
+event MarketResolved(
+  uint256 indexed marketId,
+  uint256 indexed winningSubmissionId,
+  string actualText
+);
+```
+
+## Get Contract ABI
+
+Retrieve the contract ABI for direct integration.
+
+```bash cURL
+curl https://api.proteus.com/api/contract-abi/EnhancedPredictionMarket
+```
+
+<ParamField path="contract_name" type="string" required>
+  Contract name: `EnhancedPredictionMarket`, `ActorRegistry`, `DecentralizedOracle`, or `PayoutManager`
+</ParamField>
+
+### Response
+
+```json
+[
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "marketId", "type": "uint256"},
+      {"internalType": "string", "name": "predictedText", "type": "string"}
+    ],
+    "name": "submitPrediction",
+    "outputs": [],
+    "stateMutability": "payable",
+    "type": "function"
+  }
+]
+```
+
+## Requirements and Limits
+
+### Minimum Stake
+
+- **Prediction submission**: 0.01 ETH minimum
+- **Bet placement**: 0.001 ETH minimum
+
+### Gas Estimates
+
+| Operation | Estimated Gas |
+|-----------|---------------|
+| Submit prediction | ~150,000 |
+| Place bet | ~80,000 |
+| Market creation | ~300,000 |
+
+### Market Timing
+
+- Cannot submit predictions after market `end_time`
+- Cannot place bets after market closes
+- Must wait for market resolution to claim winnings
+
+## Error Handling
+
+Common contract revert reasons:
+
+```javascript JavaScript
+try {
+  const tx = await marketContract.submitPrediction(marketId, text, { value });
+  await tx.wait();
+} catch (error) {
+  if (error.message.includes('Market has ended')) {
+    console.error('Market is closed for submissions');
+  } else if (error.message.includes('Insufficient stake')) {
+    console.error('Stake amount too low (min 0.01 ETH)');
+  } else if (error.message.includes('Market does not exist')) {
+    console.error('Invalid market ID');
+  } else {
+    console.error('Transaction failed:', error);
+  }
+}
+```
+
+## Testing on Sepolia
+
+<Info>
+Before deploying to mainnet, test your integration on BASE Sepolia testnet:
+
+- Contract: `0x6b67cb0daaf78f63bd11195df0fd9ffe4361b93c`
+- RPC: `https://sepolia.base.org`
+- Faucet: [BASE Sepolia Faucet](https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet)
+</Info>
+
+## Best Practices
+
+1. **Estimate gas** before sending transactions
+2. **Check market status** before submitting predictions
+3. **Validate user input** (min/max stake amounts)
+4. **Handle transaction failures** gracefully
+5. **Display transaction confirmations** to users
+6. **Cache contract ABI** client-side to reduce API calls

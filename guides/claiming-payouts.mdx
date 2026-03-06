@@ -1,0 +1,503 @@
+---
+title: Claiming Payouts
+description: Understand winner determination via Levenshtein distance and claim your prize
+---
+
+After a market closes, the oracle resolves it by providing the actual text posted by the actor. The submission with the lowest Levenshtein distance wins the entire pool (minus 7% platform fee).
+
+## How Winners Are Determined
+
+Proteus uses **Levenshtein distance** (edit distance) to score predictions. This is calculated **on-chain** for full transparency and determinism.
+
+### What is Levenshtein Distance?
+
+Levenshtein distance measures the minimum number of single-character edits (insertions, deletions, substitutions) needed to transform one string into another.
+
+**Example:**
+
+```
+Prediction: "Starship flight 2 confirmed for March."
+Actual:     "Starship flight 2 is GO for March."
+
+Edits required:
+1. Delete "confirmed "
+2. Insert "is "
+3. Insert "GO "
+
+Distance: ~12 edits
+```
+
+The submission with the **lowest distance** wins.
+
+## Market Resolution
+
+<Steps>
+  <Step title="Market Closes">
+    When `block.timestamp >= endTime`, submissions are closed.
+    
+    ```solidity
+    if (block.timestamp < market.endTime) revert MarketNotEnded();
+    ```
+  </Step>
+  
+  <Step title="Oracle Submits Actual Text">
+    The contract owner (oracle) calls `resolveMarket` with the actual text:
+    
+    ```solidity
+    function resolveMarket(
+        uint256 _marketId,
+        string calldata _actualText
+    ) external onlyOwner
+    ```
+    
+    Only the oracle can resolve markets (centralized in v0).
+  </Step>
+  
+  <Step title="On-Chain Distance Calculation">
+    The contract computes Levenshtein distance for each submission:
+    
+    ```solidity
+    for (uint256 i = 0; i < submissions.length; i++) {
+        uint256 distance = levenshteinDistance(
+            submissions[i].predictedText,
+            _actualText
+        );
+        
+        if (distance < minDistance) {
+            minDistance = distance;
+            winningId = submissions[i].id;
+        }
+    }
+    ```
+  </Step>
+  
+  <Step title="Winner Determined">
+    The submission with the lowest distance is marked as winner:
+    
+    ```solidity
+    market.resolved = true;
+    market.winningSubmissionId = winningId;
+    
+    emit MarketResolved(_marketId, winningId, _actualText, minDistance);
+    ```
+  </Step>
+</Steps>
+
+## Tie Breaking
+
+If multiple submissions have the same distance:
+
+```solidity
+// Strict less-than: first submitter wins ties
+if (distance < minDistance) {
+    minDistance = distance;
+    winningId = subIds[i];
+}
+```
+
+**First submitter wins** — this is deterministic and documented.
+
+## On-Chain Levenshtein Implementation
+
+The contract includes a full Levenshtein distance implementation:
+
+```solidity
+function levenshteinDistance(
+    string memory a,
+    string memory b
+) public pure returns (uint256) {
+    bytes memory bytesA = bytes(a);
+    bytes memory bytesB = bytes(b);
+    
+    uint256 lenA = bytesA.length;
+    uint256 lenB = bytesB.length;
+    
+    // Handle empty strings
+    if (lenA == 0) return lenB;
+    if (lenB == 0) return lenA;
+    
+    // Space-optimized dynamic programming
+    uint256[] memory prevRow = new uint256[](lenB + 1);
+    uint256[] memory currRow = new uint256[](lenB + 1);
+    
+    // Initialize first row
+    for (uint256 j = 0; j <= lenB; j++) {
+        prevRow[j] = j;
+    }
+    
+    // Fill matrix
+    for (uint256 i = 1; i <= lenA; i++) {
+        currRow[0] = i;
+        
+        for (uint256 j = 1; j <= lenB; j++) {
+            uint256 cost = (bytesA[i-1] == bytesB[j-1]) ? 0 : 1;
+            
+            uint256 deletion = prevRow[j] + 1;
+            uint256 insertion = currRow[j-1] + 1;
+            uint256 substitution = prevRow[j-1] + cost;
+            
+            currRow[j] = _min3(deletion, insertion, substitution);
+        }
+        
+        (prevRow, currRow) = (currRow, prevRow);
+    }
+    
+    return prevRow[lenB];
+}
+```
+
+**Gas cost**: O(m × n) where m, n are string lengths. For 280-character strings: ~3-5 million gas.
+
+## Minimum Submissions Rule
+
+```solidity
+uint256 public constant MIN_SUBMISSIONS = 2;
+
+if (subIds.length < MIN_SUBMISSIONS) revert MinimumSubmissionsNotMet();
+```
+
+Markets need **at least 2 submissions** to resolve. Single submissions are refunded:
+
+```solidity
+function refundSingleSubmission(uint256 _marketId) external nonReentrant {
+    // Verify only 1 submission
+    if (subIds.length != 1) revert NotSingleSubmission();
+    
+    // Full refund — no fee
+    (bool success, ) = submitter.call{value: submission.amount}("");
+}
+```
+
+## Claiming Your Payout
+
+<Steps>
+  <Step title="Check If You Won">
+    Query the market to see the winning submission:
+    
+    ```javascript
+    const market = await contract.methods.markets(marketId).call();
+    
+    if (!market.resolved) {
+        console.log('Market not yet resolved');
+        return;
+    }
+    
+    const winningSubId = market.winningSubmissionId;
+    const yourSubId = 123; // Your submission ID
+    
+    if (winningSubId === yourSubId) {
+        console.log('You won! 🎉');
+    }
+    ```
+  </Step>
+  
+  <Step title="Call claimPayout">
+    Winners must manually claim their payout:
+    
+    ```javascript
+    const tx = await contract.methods
+        .claimPayout(submissionId)
+        .send({ 
+            from: yourAddress,
+            gas: 100000 
+        });
+    
+    console.log('Payout claimed:', tx.transactionHash);
+    ```
+  </Step>
+  
+  <Step title="Receive ETH">
+    The contract transfers the payout:
+    
+    ```solidity
+    uint256 totalPool = market.totalPool;
+    uint256 fee = (totalPool * PLATFORM_FEE_BPS) / 10000;  // 7%
+    uint256 payout = totalPool - fee;
+    
+    // Fee goes to feeRecipient (pull-based)
+    pendingFees[feeRecipient] += fee;
+    
+    // Winner gets payout
+    (bool success, ) = submission.submitter.call{value: payout}("");
+    ```
+    
+    You receive **93% of the total pool**.
+  </Step>
+</Steps>
+
+## Payout Calculation
+
+### Platform Fee
+
+```solidity
+uint256 public constant PLATFORM_FEE_BPS = 700;  // 7% fee
+```
+
+7% is deducted from the pool and distributed:
+
+| Recipient | Share | Amount (of 7%) |
+|-----------|-------|----------------|
+| Genesis NFT Holders | 20% | 1.4% of volume |
+| Oracles | 28.6% | 2.0% of volume |
+| Market Creators | 14.3% | 1.0% of volume |
+| Node Operators | 14.3% | 1.0% of volume |
+| Builder Pool | 28.6% | 2.0% of volume |
+
+### Example
+
+```javascript
+// Market has 10 ETH total pool
+const totalPool = 10; // ETH
+const fee = totalPool * 0.07; // 0.7 ETH
+const payout = totalPool - fee; // 9.3 ETH
+
+console.log(`Winner receives: ${payout} ETH`);
+console.log(`Platform fee: ${fee} ETH`);
+```
+
+## Smart Contract Method
+
+```solidity
+function claimPayout(uint256 _submissionId) external nonReentrant {
+    Submission storage submission = submissions[_submissionId];
+    Market storage market = markets[submission.marketId];
+    
+    // Validation
+    if (submission.submitter == address(0)) revert SubmissionNotFound();
+    if (!market.resolved) revert MarketNotEnded();
+    if (market.winningSubmissionId != _submissionId) revert NotWinningSubmission();
+    if (submission.claimed) revert AlreadyClaimed();
+    
+    // Mark claimed
+    submission.claimed = true;
+    
+    // Calculate payout
+    uint256 totalPool = market.totalPool;
+    uint256 fee = (totalPool * PLATFORM_FEE_BPS) / 10000;
+    uint256 payout = totalPool - fee;
+    
+    // Accumulate fees for pull-based withdrawal
+    pendingFees[feeRecipient] += fee;
+    
+    // Transfer payout
+    (bool success, ) = submission.submitter.call{value: payout}("");
+    if (!success) revert TransferFailed();
+    
+    emit PayoutClaimed(_submissionId, submission.submitter, payout);
+}
+```
+
+## Events
+
+### MarketResolved
+
+```solidity
+event MarketResolved(
+    uint256 indexed marketId,
+    uint256 winningSubmissionId,
+    string actualText,
+    uint256 winningDistance
+);
+```
+
+Listen for resolution:
+
+```javascript
+contract.events.MarketResolved({ filter: { marketId: 0 } })
+    .on('data', (event) => {
+        const { winningSubmissionId, actualText, winningDistance } = event.returnValues;
+        console.log(`Winner: Submission #${winningSubmissionId}`);
+        console.log(`Actual text: "${actualText}"`);
+        console.log(`Distance: ${winningDistance}`);
+    });
+```
+
+### PayoutClaimed
+
+```solidity
+event PayoutClaimed(
+    uint256 indexed submissionId,
+    address indexed claimer,
+    uint256 amount
+);
+```
+
+## Checking Winnings
+
+### Query Your Submissions
+
+```javascript
+async function checkWinnings(userAddress) {
+    const subIds = await contract.methods
+        .getUserSubmissions(userAddress)
+        .call();
+    
+    for (const subId of subIds) {
+        const sub = await contract.methods
+            .submissions(subId)
+            .call();
+        
+        const market = await contract.methods
+            .markets(sub.marketId)
+            .call();
+        
+        if (market.resolved && market.winningSubmissionId === subId) {
+            if (!sub.claimed) {
+                console.log(`🎉 Unclaimed winnings in submission #${subId}`);
+                
+                const payout = market.totalPool * 0.93;
+                console.log(`Payout: ${Web3.utils.fromWei(payout, 'ether')} ETH`);
+                
+                return { subId, payout };
+            } else {
+                console.log(`Submission #${subId} already claimed`);
+            }
+        }
+    }
+    
+    console.log('No unclaimed winnings');
+    return null;
+}
+```
+
+## Worked Example
+
+```javascript
+// Market: "What will @elonmusk post?"
+// Submissions:
+// #0: "Starship flight 2 confirmed for March." (0.5 ETH)
+// #1: "The future of humanity is Mars" (1.0 ETH)
+// #2: "Mars or bust" (0.2 ETH)
+
+// Actual text: "Starship flight 2 is GO for March."
+
+// Distances:
+// #0: 12 edits ← WINNER
+// #1: 59 edits
+// #2: 68 edits
+
+// Pool: 1.7 ETH
+// Fee: 0.119 ETH (7%)
+// Payout: 1.581 ETH (93%)
+
+// Claim:
+const tx = await contract.methods
+    .claimPayout(0)
+    .send({ from: winnerAddress, gas: 100000 });
+
+// Winner receives 1.581 ETH
+```
+
+## Null Case Handling
+
+If the actor doesn't post during the market window:
+
+```javascript
+// Oracle resolves with sentinel
+await contract.methods
+    .resolveMarket(marketId, "__NULL__")
+    .send({ from: oracleAddress });
+
+// Prediction: "__NULL__"
+// Actual: "__NULL__"
+// Distance: 0 (exact match) ← WINNER
+```
+
+Submissions that predicted `__NULL__` win with distance 0.
+
+## Security Features
+
+### ReentrancyGuard
+
+```solidity
+function claimPayout(uint256 _submissionId) external nonReentrant {
+    // Protected against reentrancy attacks
+}
+```
+
+### Pull-Based Fees
+
+```solidity
+// Fees accumulate, don't block payout
+pendingFees[feeRecipient] += fee;
+
+// Fee recipient withdraws separately
+function withdrawFees() external nonReentrant {
+    uint256 amount = pendingFees[msg.sender];
+    if (amount == 0) revert NoFeesToWithdraw();
+    
+    pendingFees[msg.sender] = 0;
+    (bool success, ) = msg.sender.call{value: amount}("");
+}
+```
+
+This prevents malicious fee recipients from blocking payouts.
+
+## Troubleshooting
+
+<Tabs>
+  <Tab title="Not Winning Submission">
+    ```solidity
+    revert NotWinningSubmission();
+    ```
+    
+    Your submission didn't have the lowest distance. Check:
+    
+    ```javascript
+    const market = await contract.methods.markets(marketId).call();
+    console.log('Winner:', market.winningSubmissionId);
+    console.log('Your submission:', yourSubId);
+    ```
+  </Tab>
+  
+  <Tab title="Already Claimed">
+    ```solidity
+    revert AlreadyClaimed();
+    ```
+    
+    You already claimed this payout. Each submission can only claim once.
+  </Tab>
+  
+  <Tab title="Market Not Resolved">
+    ```solidity
+    revert MarketNotEnded();
+    ```
+    
+    Oracle hasn't resolved yet. Wait for the `MarketResolved` event.
+  </Tab>
+</Tabs>
+
+## Emergency Withdrawals
+
+If oracle fails to resolve after 7 days:
+
+```solidity
+function emergencyWithdraw(uint256 _marketId) external onlyOwner nonReentrant {
+    // Only after 7 days past market end
+    if (block.timestamp < market.endTime + 7 days) revert MarketNotEnded();
+    
+    // Refund all submissions
+    for (uint256 i = 0; i < subIds.length; i++) {
+        // Return full stake to each submitter
+    }
+}
+```
+
+This protects users if resolution fails.
+
+## Next Steps
+
+After claiming:
+
+1. Check BaseScan for transaction confirmation
+2. Verify ETH arrived in your wallet
+3. Consider reinvesting in new markets
+
+<CardGroup cols={2}>
+  <Card title="Create New Market" icon="plus" href="/guides/creating-markets">
+    Use your winnings to create new prediction markets
+  </Card>
+  <Card title="View Leaderboard" icon="trophy" href="/features/leaderboard">
+    See top predictors and their performance
+  </Card>
+</CardGroup>

@@ -1,0 +1,495 @@
+---
+title: 'Fee Structure'
+description: 'Platform fees and payout distribution in Proteus markets'
+icon: 'wallet'
+---
+
+Proteus charges a **7% platform fee** on market volume. The fee is deducted from the total pool when winners claim their payouts, with 93% going to the winner.
+
+## Fee Calculation
+
+<CodeGroup>
+```solidity From PredictionMarketV2.sol
+uint256 public constant PLATFORM_FEE_BPS = 700;  // 7% (700 basis points)
+
+function claimPayout(uint256 _submissionId) external nonReentrant {
+    // ... validation ...
+    
+    uint256 totalPool = market.totalPool;
+    uint256 fee = (totalPool * PLATFORM_FEE_BPS) / 10000;  // 7%
+    uint256 payout = totalPool - fee;                       // 93%
+    
+    pendingFees[feeRecipient] += fee;
+    
+    (bool success, ) = submission.submitter.call{value: payout}("");
+    // ...
+}
+```
+
+```text Example Calculation
+Total Pool: 1.0 ETH
+Platform Fee (7%): 0.07 ETH
+Winner Payout (93%): 0.93 ETH
+
+Total Pool: 10 ETH
+Platform Fee (7%): 0.7 ETH  
+Winner Payout (93%): 9.3 ETH
+```
+</CodeGroup>
+
+<Info>
+**Basis Points**: 700 BPS = 7.00%. Basis points avoid floating-point arithmetic in Solidity.
+</Info>
+
+## Fee Distribution (Whitepaper Spec)
+
+From the whitepaper Section 5.3, the 7% platform fee is intended to be split across five stakeholder groups:
+
+<Tabs>
+  <Tab title="Distribution Table">
+    | Recipient | Share of Fee | Share of Volume | Purpose |
+    |-----------|-------------|-----------------|----------|
+    | **Genesis NFT Holders** | 20.0% | 1.4% | Early supporter rewards |
+    | **Oracles** | 28.6% | 2.0% | Resolution verification |
+    | **Market Creators** | 14.3% | 1.0% | Incentivize quality markets |
+    | **Node Operators** | 14.3% | 1.0% | Infrastructure providers |
+    | **Builder Pool** | 28.6% | 2.0% | Protocol development |
+    | **TOTAL** | 100% | 7.0% | |
+  </Tab>
+  
+  <Tab title="Visual Breakdown">
+    ```mermaid
+    pie title "7% Platform Fee Distribution"
+        "Genesis NFT Holders (20.0%)" : 20.0
+        "Oracles (28.6%)" : 28.6
+        "Market Creators (14.3%)" : 14.3
+        "Node Operators (14.3%)" : 14.3
+        "Builder Pool (28.6%)" : 28.6
+    ```
+  </Tab>
+  
+  <Tab title="Per-Volume Breakdown">
+    For every 100 ETH in market volume:
+    
+    - 93 ETH → Winner
+    - 7 ETH → Platform Fee:
+      - 1.4 ETH → Genesis NFT Holders
+      - 2.0 ETH → Oracles
+      - 1.0 ETH → Market Creators
+      - 1.0 ETH → Node Operators
+      - 2.0 ETH → Builder Pool
+  </Tab>
+</Tabs>
+
+<Warning>
+**v0 Alpha Status**: The detailed fee distribution mechanism (splitting across 5 recipients) is **not yet implemented** in PredictionMarketV2. Currently, all fees accumulate to a single `feeRecipient` address. The whitepaper spec represents the intended mainnet design.
+</Warning>
+
+## Current Implementation (v0 Alpha)
+
+### Single Fee Recipient
+
+```solidity PredictionMarketV2.sol:61-129
+address public feeRecipient;
+
+constructor(address _feeRecipient) Ownable(msg.sender) {
+    feeRecipient = _feeRecipient;
+}
+
+function setFeeRecipient(address _newRecipient) external onlyOwner {
+    feeRecipient = _newRecipient;
+}
+```
+
+In the testnet prototype:
+- All fees go to a single address (`feeRecipient`)
+- Owner can update the recipient address
+- No on-chain splitting yet
+
+### Pull-Based Fee Collection
+
+<Card title="Anti-Griefing Design" icon="shield-halved">
+  Fees accumulate in a mapping and must be withdrawn manually. This prevents malicious fee recipients from reverting transfers and blocking winner payouts.
+</Card>
+
+```solidity PredictionMarketV2.sol:306-316
+mapping(address => uint256) public pendingFees;
+
+function withdrawFees() external nonReentrant {
+    uint256 amount = pendingFees[msg.sender];
+    if (amount == 0) revert NoFeesToWithdraw();
+    
+    pendingFees[msg.sender] = 0;
+    
+    (bool success, ) = msg.sender.call{value: amount}("");
+    if (!success) revert TransferFailed();
+    
+    emit FeesWithdrawn(msg.sender, amount);
+}
+```
+
+**Flow**:
+1. Winner calls `claimPayout()` → fee accumulates in `pendingFees[feeRecipient]`
+2. Fee recipient calls `withdrawFees()` → ETH transferred to recipient
+
+<Info>
+This two-step process ensures winner payouts cannot be blocked by a malicious or broken fee recipient contract.
+</Info>
+
+## Stakeholder Roles (Mainnet Design)
+
+### 1. Genesis NFT Holders (20% of fees)
+
+<Card title="Early Supporter Rewards" icon="star">
+  **Share**: 1.4% of total volume
+  
+  **Purpose**: Reward early adopters who minted Genesis NFTs
+  
+  **Implementation**: Fees distributed proportionally to NFT holders
+</Card>
+
+The Genesis NFT collection is already deployed:
+- **Contract**: `0x1A5D4475881B93e876251303757E60E524286A24` (BASE Sepolia)
+- **Supply**: 60/100 minted and finalized
+- **Features**: On-chain SVG art
+
+### 2. Oracles (28.6% of fees)
+
+<Card title="Resolution Verification" icon="magnifying-glass-chart">
+  **Share**: 2.0% of total volume
+  
+  **Purpose**: Compensate oracles for fetching and verifying actual text from X API
+  
+  **Planned**: Multi-oracle consensus with commit-reveal scheme
+</Card>
+
+<Accordion title="Current vs Planned Oracle System">
+  <Tabs>
+    <Tab title="v0 Alpha (Current)">
+      - Single EOA (contract owner) calls `resolveMarket()`
+      - Centralized, no economic incentive
+      - **Critical risk**: Owner can submit false actual text
+    </Tab>
+    
+    <Tab title="Mainnet (Planned)">
+      - Multiple registered oracles
+      - Commit-reveal consensus mechanism
+      - Slashing for dishonest oracles
+      - X API verification (pay-per-use model viable as of Feb 2026)
+      - 28.6% of fees compensate oracle work
+    </Tab>
+  </Tabs>
+  
+  From README.md:
+  > **X API Update (Feb 2026):** X now offers pay-per-use API access for individual developers -- no subscriptions, no monthly caps, just credit-based billing. This is a significant unlock for oracle resolution: each oracle node can independently fetch posts by ID, verify authorship, and confirm timestamps via the X API v2.
+</Accordion>
+
+### 3. Market Creators (14.3% of fees)
+
+<Card title="Quality Market Incentive" icon="lightbulb">
+  **Share**: 1.0% of total volume
+  
+  **Purpose**: Reward users who create popular, high-volume markets
+  
+  **Mechanism**: Proportional to volume their created markets generate
+</Card>
+
+Anyone can call `createMarket(actorHandle, duration)`. The market creator receives a share of fees from all volume in that market.
+
+<Accordion title="Anti-Spam Consideration">
+  Without a market creation cost, this could incentivize spam markets. Possible mitigations:
+  
+  - Minimum creation fee
+  - Reputation system
+  - Curator approval for featured markets
+  - Fee share only activates above minimum volume threshold
+</Accordion>
+
+### 4. Node Operators (14.3% of fees)
+
+<Card title="Infrastructure Providers" icon="server">
+  **Share**: 1.0% of total volume
+  
+  **Purpose**: Compensate RPC providers, indexers, and backend infrastructure
+  
+  **Scope**: Railway hosting, BASE RPC, Redis, monitoring services
+</Card>
+
+This category covers operational costs:
+- Backend hosting (Railway)
+- RPC provider fees (currently public RPC, planned Alchemy/QuickNode)
+- Redis caching
+- Monitoring and logging (planned Sentry)
+
+### 5. Builder Pool (28.6% of fees)
+
+<Card title="Protocol Development" icon="code">
+  **Share**: 2.0% of total volume
+  
+  **Purpose**: Fund ongoing development, audits, and protocol improvements
+  
+  **Governed**: Could transition to DAO or multisig in the future
+</Card>
+
+This is the largest fee share (tied with Oracles) because it funds:
+- Smart contract audits
+- Frontend development
+- Security improvements
+- Integration with Timepoint suite (TDF, Clockchain)
+
+## Special Case: Single Submission Refund
+
+<Card title="No Competition = No Fee" icon="arrow-rotate-left">
+  If a market ends with only 1 submission, the participant receives a **full refund** with **no fee charged**.
+</Card>
+
+```solidity PredictionMarketV2.sol:280-301
+function refundSingleSubmission(uint256 _marketId) external nonReentrant {
+    Market storage market = markets[_marketId];
+    
+    // Validation checks...
+    
+    uint256[] storage subIds = marketSubmissions[_marketId];
+    if (subIds.length != 1) revert NotSingleSubmission();
+    
+    Submission storage submission = submissions[subIds[0]];
+    if (submission.claimed) revert AlreadyClaimed();
+    
+    submission.claimed = true;
+    market.resolved = true;
+    
+    // Full refund - no fee taken
+    (bool success, ) = submission.submitter.call{value: submission.amount}("");
+    if (!success) revert TransferFailed();
+    
+    emit SingleSubmissionRefunded(_marketId, subIds[0], submission.submitter, submission.amount);
+}
+```
+
+**Rationale**: It would be unfair to charge 7% when there was no actual competition. The single participant gets all their ETH back.
+
+<Info>
+**Minimum submissions**: Markets require `MIN_SUBMISSIONS = 2` to resolve normally. With only 1 submission, `refundSingleSubmission()` must be called instead of `resolveMarket()`.
+</Info>
+
+## Comparison: Proteus vs Other Platforms
+
+<Tabs>
+  <Tab title="Proteus">
+    - **Fee**: 7%
+    - **Winner Share**: 93%
+    - **Structure**: Winner-take-all
+    - **Fee Distribution**: 5 stakeholder groups (planned)
+    - **Special Cases**: Single submission = full refund
+  </Tab>
+  
+  <Tab title="Polymarket">
+    - **Fee**: 2-5% (varies by market)
+    - **Winner Share**: 95-98%
+    - **Structure**: Binary shares (can sell before resolution)
+    - **Fee Distribution**: Platform
+  </Tab>
+  
+  <Tab title="Kalshi">
+    - **Fee**: 7-10% (exchange + settlement)
+    - **Winner Share**: 90-93%
+    - **Structure**: Binary contracts
+    - **Fee Distribution**: Exchange operator (CFTC-regulated)
+  </Tab>
+  
+  <Tab title="Augur">
+    - **Fee**: 1-2% + reporter stake
+    - **Winner Share**: ~98%
+    - **Structure**: Binary shares on Ethereum
+    - **Fee Distribution**: REP token holders
+    - **Status**: Largely abandoned post-2021
+  </Tab>
+</Tabs>
+
+<Info>
+Proteus's 7% fee is competitive with Kalshi and higher than Polymarket, but justified by:
+1. On-chain Levenshtein computation (expensive gas costs)
+2. Complex oracle resolution (multiple sources, X API costs)
+3. Novel market primitive (higher development costs)
+</Info>
+
+## Fee Economics
+
+### Volume Scenarios
+
+<Tabs>
+  <Tab title="Small Market (10 ETH)">
+    | Recipient | Amount |
+    |-----------|--------|
+    | Winner | 9.3 ETH (93%) |
+    | Platform Fee | 0.7 ETH (7%) |
+    
+    **Fee Split (Planned)**:
+    - Genesis NFT Holders: 0.14 ETH
+    - Oracles: 0.20 ETH
+    - Market Creator: 0.07 ETH
+    - Node Operators: 0.07 ETH
+    - Builder Pool: 0.20 ETH
+  </Tab>
+  
+  <Tab title="Medium Market (100 ETH)">
+    | Recipient | Amount |
+    |-----------|--------|
+    | Winner | 93 ETH (93%) |
+    | Platform Fee | 7 ETH (7%) |
+    
+    **Fee Split (Planned)**:
+    - Genesis NFT Holders: 1.4 ETH
+    - Oracles: 2.0 ETH
+    - Market Creator: 1.0 ETH
+    - Node Operators: 1.0 ETH
+    - Builder Pool: 2.0 ETH
+  </Tab>
+  
+  <Tab title="Large Market (1,000 ETH)">
+    | Recipient | Amount |
+    |-----------|--------|
+    | Winner | 930 ETH (93%) |
+    | Platform Fee | 70 ETH (7%) |
+    
+    **Fee Split (Planned)**:
+    - Genesis NFT Holders: 14 ETH
+    - Oracles: 20 ETH
+    - Market Creator: 10 ETH
+    - Node Operators: 10 ETH
+    - Builder Pool: 20 ETH
+  </Tab>
+</Tabs>
+
+### Sustainability Analysis
+
+From the whitepaper's market sizing:
+- Binary prediction markets: $40B volume in 2025
+- Projected 2026: $222.5B notional volume
+- Sports betting TAM: $187B by 2030
+
+If Proteus captures even **0.1% of binary market volume**:
+- Volume: $222.5M annually
+- Platform fees (7%): $15.6M annually
+- Builder Pool share (28.6%): $4.5M annually
+
+This exceeds the cost of:
+- Annual security audits ($100-200K)
+- Full-time development team ($500K-1M)
+- Infrastructure costs ($50-100K)
+
+## Implementation Roadmap
+
+<Steps>
+  <Step title="v0 Alpha (Current)">
+    ✅ Single `feeRecipient` address
+    
+    ✅ Pull-based fee withdrawal
+    
+    ✅ 7% fee calculation
+    
+    ✅ Single submission refund logic
+  </Step>
+  
+  <Step title="Pre-Mainnet">
+    - [ ] Implement 5-way fee splitting contract
+    - [ ] Genesis NFT holder distribution mechanism
+    - [ ] Market creator reward tracking
+    - [ ] Oracle compensation tied to resolution
+  </Step>
+  
+  <Step title="Mainnet">
+    - [ ] Multi-oracle consensus system
+    - [ ] Slashing for dishonest oracles
+    - [ ] Node operator registry
+    - [ ] Builder Pool governance (DAO or multisig)
+  </Step>
+</Steps>
+
+## Security Considerations
+
+<Warning>
+**Pull-based withdrawal prevents griefing**: Fees accumulate in `pendingFees` mapping and must be withdrawn manually. This means a malicious or broken fee recipient **cannot** block winner payouts by reverting on `transfer()`.
+</Warning>
+
+<Accordion title="Why Not Push Payments?">
+  **Anti-pattern (push)**:
+  ```solidity
+  // BAD: If feeRecipient.transfer() reverts, entire transaction fails
+  feeRecipient.transfer(fee);
+  winner.transfer(payout);
+  ```
+  
+  **Best practice (pull)**:
+  ```solidity
+  // GOOD: Accumulate fees separately, winner payout always succeeds
+  pendingFees[feeRecipient] += fee;
+  winner.call{value: payout}("");
+  ```
+  
+  This ensures winners can always claim, even if fee collection temporarily fails.
+</Accordion>
+
+### Reentrancy Protection
+
+All payout functions use `nonReentrant` modifier:
+
+```solidity
+function claimPayout(uint256 _submissionId) external nonReentrant {
+    // ...
+}
+
+function withdrawFees() external nonReentrant {
+    // ...
+}
+```
+
+This prevents reentrancy attacks during ETH transfers.
+
+## Key Takeaways
+
+<CardGroup cols={3}>
+  <Card title="7% Platform Fee" icon="percent">
+    93% to winner, 7% to platform
+  </Card>
+  
+  <Card title="5 Stakeholder Groups" icon="users">
+    Genesis holders, oracles, creators, nodes, builders
+  </Card>
+  
+  <Card title="Pull-Based Withdrawal" icon="hand-holding-dollar">
+    Prevents griefing attacks
+  </Card>
+  
+  <Card title="No Fee for Single Entry" icon="arrow-rotate-left">
+    Full refund if no competition
+  </Card>
+  
+  <Card title="Competitive Rate" icon="chart-line">
+    Comparable to Kalshi, justified by novel mechanics
+  </Card>
+  
+  <Card title="Reentrancy Protected" icon="shield-check">
+    Safe ETH transfers
+  </Card>
+</CardGroup>
+
+## Further Reading
+
+<CardGroup cols={2}>
+  <Card title="Market Lifecycle" icon="chart-gantt" href="/concepts/market-lifecycle">
+    See when fees are collected during market lifecycle
+  </Card>
+  
+  <Card title="Contract Reference" icon="file-contract" href="/contracts/prediction-market-v2">
+    Full PredictionMarketV2 documentation
+  </Card>
+</CardGroup>
+
+---
+
+<Note>
+**Source**: Fee structure from WHITEPAPER.md Section 5.3 and PredictionMarketV2.sol implementation.
+
+The 5-way fee split is the **intended mainnet design**. The v0 alpha currently uses a single fee recipient address.
+</Note>

@@ -1,0 +1,332 @@
+---
+title: 'Worked Examples'
+description: 'Six scenarios demonstrating the strategic landscape of Levenshtein-scored markets'
+icon: 'vial'
+---
+
+# Worked Examples
+
+Six scenarios showing the full spectrum of prediction quality in a Levenshtein-scored market. Each demonstrates a different strategic insight.
+
+<Note>
+These are simulated examples on BASE Sepolia testnet, not live market data. They are constructed to demonstrate the range of strategic outcomes in a Levenshtein-scored market.
+</Note>
+
+## Example 1: AI Roleplay Wins (Elon Musk)
+
+**Market**: What will `@elonmusk` post?
+
+**Actual text**: `Starship flight 2 is GO for March. Humanity becomes multiplanetary or we die trying.`
+
+| Submitter | Predicted Text | Distance |
+|-----------|---------------|----------|
+| **AI Roleplay (Claude)** | `Starship flight 2 confirmed for March. Humanity becomes multiplanetary or dies trying.` | **12** |
+| Human fan | `The future of humanity is Mars and beyond` | 59 |
+| AI (lazy prompt GPT) | `Elon will probably tweet about SpaceX rockets going to space soon` | 66 |
+| Bot (entropy) | `a8j3kd9xmz pqlw7 MARS ufk2 rocket lol` | 72 |
+
+<Check>
+**Winner**: AI Roleplay (Claude) at distance 12. Gap over runner-up: **47 edits**.
+</Check>
+
+### Analysis
+
+A well-prompted AI captures Musk's tone, structure, and vocabulary. The human fan got the *theme* right ("Mars") but **theme doesn't pay — exact wording does**.
+
+<Tip>
+The 47-edit gap between the AI roleplay and the human fan represents the entire pool. The random bot demonstrates the anti-spam property: gibberish achieves near-maximal distance.
+</Tip>
+
+### Key Differences
+
+```diff
+Actual:    Starship flight 2 is GO for March.
+Predicted: Starship flight 2 confirmed for March.
+           ~~~~~~~~~~~~~~~~~~^^~~~~~~~~~~~~~~
+
+Actual:    or we die trying.
+Predicted: or dies trying.
+              ~~~^~~~~~~~~
+```
+
+Claude captured the structure but missed two key details:
+- "is GO" vs "confirmed" (idiomatic Musk phrasing)
+- "we die" vs "dies" (pronoun choice)
+
+---
+
+## Example 2: Human Insider Beats AI (Sam Altman)
+
+**Market**: What will `@sama` post?
+
+**Actual text**: `we are now confident AGI is achievable with current techniques. announcement soon.`
+
+| Submitter | Predicted Text | Distance |
+|-----------|---------------|----------|
+| **Ex-OpenAI engineer** | `we are now confident AGI is achievable with current techniques. big announcement soon.` | **4** |
+| AI Roleplay (GPT) | `we now believe AGI is achievable with current techniques. announcement coming soon.` | 18 |
+| Human (cynical) | `Sam will say AGI is close again like he always does nothing new` | 59 |
+
+<Check>
+**Winner**: Ex-OpenAI engineer at distance 4. Gap over runner-up: **14 edits**.
+</Check>
+
+### Analysis
+
+**Insider information beats AI.** Someone who heard the rehearsed phrasing knows the exact phrase "we are now confident" — the AI generates the plausible but incorrect "we now believe."
+
+That single phrase difference accounts for most of the 14-edit gap.
+
+<Warning>
+The cynical human, despite understanding Altman's general messaging patterns, scores worse than the AI because **thematic understanding without exact wording is worth little** in a Levenshtein-scored market.
+</Warning>
+
+### Information Asymmetry
+
+```text
+Insider knows: "we are now confident"
+AI generates:  "we now believe"
+              ~~~^^^^^^^^^^^^^^^~~~
+
+Distance from actual:
+Insider: 4 edits  (only "big announcement" vs "announcement")
+AI:     18 edits (multiple phrase substitutions)
+```
+
+**Information asymmetry is priced continuously, not as a binary "knew / didn't know."**
+
+---
+
+## Example 3: Insider Leaks Exact Wording (Zuckerberg)
+
+**Market**: What will `@zuck` post?
+
+**Actual text**: `Introducing Meta Ray-Ban with live AI translation. 12 languages. The future is on your face.`
+
+| Submitter | Predicted Text | Distance |
+|-----------|---------------|----------|
+| **Meta intern** | `Introducing Meta Ray-Ban with live AI translation in 12 languages. The future is on your face.` | **3** |
+| AI Roleplay | `Introducing Meta Ray-Ban AI glasses with real-time translation in 8 languages. The future is on your face.` | 25 |
+| Human (guessing) | `zuck will announce glasses or something idk` | 73 |
+| Spam bot | `BUY META NOW GLASSES MOONSHOT 1000X GUARANTEED` | 83 |
+
+<Check>
+**Winner**: Meta intern at distance 3. Gap over runner-up: **22 edits**.
+</Check>
+
+### Analysis
+
+**Product launches have rehearsed copy** prepared by marketing teams. Access to a draft deck gives a 22-edit advantage over the best AI.
+
+The AI gets the structure right ("Introducing Meta Ray-Ban... The future is on your face.") but misses:
+
+<CodeGroup>
+```diff Specific Phrasing
+Actual:    with live AI translation
+Predicted: with real-time translation
+           ~~~~~^^^^~~^^^^^^^^^^^^^^
+```
+
+```diff Exact Number
+Actual:    12 languages
+Predicted: 8 languages
+           ^^
+```
+
+```diff Product Name
+Actual:    Meta Ray-Ban
+Predicted: Meta Ray-Ban AI glasses
+           ~~~~~~~~~~~~~^^^^^^^^^^^
+```
+</CodeGroup>
+
+<Info>
+**Insider access to marketing materials is directly monetizable** in this market structure.
+</Info>
+
+---
+
+## Example 4: Null Submission Wins (Jensen Huang Stays Silent)
+
+**Market**: What will `@JensenHuang` post?
+
+**Actual text**: *(nothing posted)* — resolved with `__NULL__`
+
+| Submitter | Predicted Text | Distance |
+|-----------|---------------|----------|
+| **Null trader** | `__NULL__` | **0** |
+| Human (guessing) | `Jensen will flex about Blackwell sales numbers` | 46 |
+| AI Roleplay | `NVIDIA Blackwell Ultra is sampling ahead of schedule. The next era of computing starts now.` | 90 |
+
+<Check>
+**Winner**: Null trader at distance 0 (exact match). Gap over runner-up: **46 edits**.
+</Check>
+
+### Analysis
+
+**Binary markets cannot express "this person will not post."**
+
+The `__NULL__` sentinel enables betting on inaction. AI roleplay agents *always* generate text — they are structurally incapable of predicting silence.
+
+<Tip>
+A human trader who recognizes that Jensen Huang is unlikely to post during the market window can exploit this blind spot. **Distance 0 means the null trader takes the entire pool.**
+</Tip>
+
+### Why AI Can't Predict Silence
+
+```python
+def ai_roleplay(prompt):
+    # AI models are trained to generate text
+    # They cannot output "nothing"
+    return generate_text(prompt)
+
+def null_prediction():
+    # Humans can predict inaction
+    return "__NULL__"
+```
+
+This is a **market primitive that does not exist in yes/no contracts**.
+
+---
+
+## Example 5: AI vs AI Race — THE THESIS EXAMPLE (Satya Nadella)
+
+**Market**: What will `@sataborasu` post?
+
+**Actual text**: `Copilot is now generating 46% of all new code at GitHub-connected enterprises. The AI transformation of software is just beginning.`
+
+| Submitter | Predicted Text | Distance |
+|-----------|---------------|----------|
+| **Claude roleplay** | `Copilot is now generating 45% of all new code at GitHub-connected enterprises. The AI transformation of software is just beginning.` | **1** |
+| GPT roleplay | `Copilot is now generating 43% of all new code at GitHub-connected enterprises. The AI transformation of software has just begun.` | 8 |
+| Human (vague) | `Microsoft AI is great and will change the world of coding forever` | 101 |
+
+<Check>
+**Winner**: Claude roleplay at distance 1 (single character: `5` → `6`). Gap over runner-up: **7 edits**.
+</Check>
+
+### This is the Thesis Example
+
+Two frontier AI models, same public training corpus, same prompt template. Claude gets within 1 edit — the only difference is the number "45" versus "46." GPT gets within 8 edits, additionally substituting "has just begun" for "is just beginning."
+
+**The 7-edit gap between two frontier models is worth the entire pool.**
+
+<Warning>
+**Binary Market Equivalent**: Both AIs "predicted correctly" — Nadella posted about Copilot code generation, which both models anticipated. A binary contract would split nothing.
+</Warning>
+
+### Marginal Calibration
+
+```diff Claude vs Actual
+Actual:    Copilot is now generating 46% of all new code
+Predicted: Copilot is now generating 45% of all new code
+                                     ^^
+Distance: 1 edit
+```
+
+```diff GPT vs Actual
+Actual:    46%... is just beginning.
+Predicted: 43%... has just begun.
+           ^^~~~~~^^^~~~^^^^^^^^^
+Distance: 8 edits
+```
+
+Levenshtein distance rewards marginal calibration:
+- The model that predicts "45%" instead of "43%" captures 1 edit of advantage
+- The model that preserves the exact phrase "is just beginning" instead of paraphrasing to "has just begun" captures several more
+
+<Check>
+**The game deepens as models improve.** When d_L drops from 100 to 50, the market transitions from noise to signal. When d_L drops from 10 to 1, the market becomes a precision instrument.
+
+Binary markets commoditize at this stage; Levenshtein markets become *more* valuable.
+</Check>
+
+---
+
+## Example 6: Bot Entropy Wastes Money (Tim Cook)
+
+**Market**: What will `@tim_cook` post?
+
+**Actual text**: `Apple Intelligence is now available in 30 countries. Privacy and AI, together.`
+
+| Submitter | Predicted Text | Distance |
+|-----------|---------------|----------|
+| **AI Roleplay** | `Apple Intelligence is now available in 24 countries. We believe privacy and AI go hand in hand.` | **28** |
+| Human (thematic) | `Tim will say something about privacy and AI like always` | 53 |
+| Random bot | `x7g APPLE j2m PHONE kq9 BUY zw3 intelligence p5 cook` | 65 |
+| Degenerate bot | `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` | 73 |
+
+<Check>
+**Winner**: AI Roleplay at distance 28. Gap over runner-up: **25 edits**.
+</Check>
+
+### Analysis
+
+This example demonstrates the **natural anti-bot property** of Levenshtein distance.
+
+Random strings over a large alphabet have expected distance approaching max(m, n). The random bot's gibberish scores 65 against ~80-character actual text — close to the theoretical maximum.
+
+<Info>
+**Expected Distance for Random Strings**: For two random strings a, b of lengths m, n drawn uniformly over an alphabet A with |A| ≥ 2:
+
+```text
+E[d_L(a, b)] → max(m, n) as |A| → ∞
+```
+
+When the alphabet is large (printable ASCII has 95 characters), the probability that any two characters match is ~1%, so random strings achieve near-maximal distance.
+</Info>
+
+### Natural Spam Filter
+
+```text
+Actual length:        ~80 characters
+Random bot distance:   65 (≈ 81% of max)
+Degenerate bot:        73 (≈ 91% of max)
+Thematic human:        53 (better than both bots!)
+```
+
+Even the degenerate bot attempting to game string length with repeated characters scores worse than a thematic human guess.
+
+<Check>
+**The metric itself is the spam filter**: In a character-level outcome space, there is no shortcut for random or adversarial submissions.
+</Check>
+
+---
+
+## Summary Table
+
+| # | Target | Winner | d_L | Runner-up d_L | Gap | Key Lesson |
+|---|--------|--------|-----|---------------|-----|------------|
+| 1 | @elonmusk | Claude roleplay | 12 | 59 | 47 | AI captures tone; theme doesn't pay, exact wording does |
+| 2 | @sama | Human insider | 4 | 18 | 14 | Insider info beats AI; information asymmetry priced continuously |
+| 3 | @zuck | Meta intern | 3 | 25 | 22 | Rehearsed copy leaks; marketing access = 22-edit advantage |
+| 4 | @JensenHuang | Null trader | 0 | 46 | 46 | Betting on silence; AI can't predict inaction |
+| 5 | @sataborasu | Claude roleplay | **1** | 8 | **7** | **THESIS**: AI vs AI, same corpus, 7-edit gap = entire pool |
+| 6 | @tim_cook | AI roleplay | 28 | 53 | 25 | Anti-bot: random strings → d_L ≈ max(m,n). Metric = spam filter |
+
+## Strategic Insights
+
+<CardGroup cols={2}>
+  <Card title="AI Excels at High-Inevitability Targets" icon="robot">
+    Rehearsed messaging, product launches, and formulaic announcements favor AI roleplay strategies.
+  </Card>
+  <Card title="Insiders Win with Context" icon="user-secret">
+    Access to draft materials, rehearsed phrasing, or internal decisions provides 14-22 edit advantage.
+  </Card>
+  <Card title="Null Traders Capture Silence" icon="volume-xmark">
+    AI always generates text. Humans can predict inaction with `__NULL__` sentinel.
+  </Card>
+  <Card title="Bots Waste Money" icon="ban">
+    Random or adversarial submissions achieve near-maximal distance. The metric is the spam filter.
+  </Card>
+</CardGroup>
+
+## Deployment Details
+
+These examples are deployed on BASE Sepolia at contract `0x5174Da96BCA87c78591038DEe9DB1811288c9286`.
+
+All distances are computed by the on-chain Levenshtein distance function. The predicted texts, actual texts, and distances are verified against the seed script (`scripts/seed_examples.py`).
+
+<Tip>
+**Want to try it yourself?** Deploy a test market on BASE Sepolia and submit predictions. See [Getting Started](/getting-started/overview) for setup instructions.
+</Tip>

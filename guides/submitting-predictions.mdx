@@ -1,0 +1,431 @@
+---
+title: Submitting Predictions
+description: Submit predictions with ETH stakes and compete for the prize pool
+---
+
+Submitting a prediction is the core interaction in Proteus. You predict the exact text a public figure will post, stake ETH on your prediction, and compete against other submissions using Levenshtein distance scoring.
+
+## Overview
+
+Each submission requires:
+- **Market ID**: Which market you're betting on
+- **Predicted Text**: Your exact prediction (up to 280 characters)
+- **ETH Stake**: Minimum 0.001 ETH
+
+The submission with the **lowest Levenshtein distance** to the actual text wins the entire pool (minus 7% platform fee).
+
+## Prerequisites
+
+<Steps>
+  <Step title="Connect Wallet">
+    Ensure your wallet is connected with BASE Sepolia ETH.
+    
+    - MetaMask: Click "Connect Wallet" and sign the message
+    - Coinbase Embedded Wallet: Enter email and verify OTP
+  </Step>
+  
+  <Step title="Find an Open Market">
+    Browse active markets where:
+    - `block.timestamp < endTime - 1 hour` (betting cutoff not passed)
+    - Market is not yet resolved
+  </Step>
+  
+  <Step title="Prepare Your Prediction">
+    Craft your predicted text carefully:
+    - Maximum 280 characters (tweet length)
+    - Every character matters — scoring uses exact edit distance
+    - Consider the actor's typical style, vocabulary, and topics
+  </Step>
+</Steps>
+
+## Submitting a Prediction
+
+<Steps>
+  <Step title="Enter Predicted Text">
+    Type your prediction in the submission form.
+    
+    <Warning>
+      **Character limits:**
+      - **Minimum**: 1 character
+      - **Maximum**: 280 characters
+      - Empty predictions are rejected on-chain
+    </Warning>
+  </Step>
+  
+  <Step title="Set Your Stake">
+    Choose how much ETH to stake:
+    
+    ```javascript
+    const MIN_BET = 0.001 // ETH
+    ```
+    
+    Your stake enters the prize pool. Winner takes all (minus 7% fee).
+  </Step>
+  
+  <Step title="Submit Transaction">
+    Click **Submit Prediction** and confirm the transaction.
+    
+    The `createSubmission` function is called:
+    
+    ```solidity
+    function createSubmission(
+        uint256 _marketId,
+        string calldata _predictedText
+    ) external payable whenNotPaused nonReentrant returns (uint256)
+    ```
+    
+    This is a **payable** function — your ETH stake is sent with the transaction.
+  </Step>
+</Steps>
+
+## Contract Interaction
+
+### Using Web3.js (Frontend)
+
+Here's how submissions are created in the frontend:
+
+```javascript
+class BettingContract {
+    async createSubmission(marketId, predictedText, stakeEth) {
+        const stakeWei = Web3.utils.toWei(stakeEth.toString(), 'ether');
+        
+        // Validate
+        if (stakeWei < Web3.utils.toWei('0.001', 'ether')) {
+            throw new Error('Minimum stake is 0.001 ETH');
+        }
+        
+        if (predictedText.length > 280) {
+            throw new Error('Prediction exceeds 280 characters');
+        }
+        
+        // Submit with ETH
+        const tx = await this.contract.methods
+            .createSubmission(marketId, predictedText)
+            .send({
+                from: this.account,
+                value: stakeWei,
+                gas: 300000
+            });
+        
+        // Extract submission ID from event
+        const submissionId = tx.events.SubmissionCreated.returnValues.submissionId;
+        
+        console.log(`Submission #${submissionId} created!`);
+        return { submissionId, transactionHash: tx.transactionHash };
+    }
+}
+```
+
+### Using Python (Backend)
+
+```python
+from web3 import Web3
+
+w3 = Web3(Web3.HTTPProvider('https://sepolia.base.org'))
+
+# Contract setup
+contract_address = '0x5174Da96BCA87c78591038DEe9DB1811288c9286'
+contract = w3.eth.contract(address=contract_address, abi=contract_abi)
+
+# Create submission
+market_id = 0
+predicted_text = "Starship flight 2 is GO for March. Humanity becomes multiplanetary or we die trying."
+stake_eth = 0.1
+
+tx_hash = contract.functions.createSubmission(
+    market_id,
+    predicted_text
+).transact({
+    'from': submitter_address,
+    'value': w3.to_wei(stake_eth, 'ether'),
+    'gas': 300000
+})
+
+receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+print(f'Submission created: {receipt.transactionHash.hex()}')
+```
+
+## On-Chain Validation
+
+The contract enforces these rules:
+
+```solidity
+if (market.endTime == 0) revert MarketNotFound();
+if (market.resolved) revert MarketAlreadyResolved();
+if (block.timestamp >= market.endTime) revert MarketEnded();
+if (block.timestamp >= market.endTime - BETTING_CUTOFF) revert BettingCutoffPassed();
+if (msg.value < MIN_BET) revert InsufficientBet();
+if (bytes(_predictedText).length == 0) revert EmptyPrediction();
+if (bytes(_predictedText).length > MAX_TEXT_LENGTH) revert PredictionTooLong();
+```
+
+### Constants
+
+```solidity
+uint256 public constant MIN_BET = 0.001 ether;
+uint256 public constant BETTING_CUTOFF = 1 hours;
+uint256 public constant MAX_TEXT_LENGTH = 280;
+```
+
+## Submission Struct
+
+Your submission is stored on-chain:
+
+```solidity
+struct Submission {
+    uint256 marketId;          // Which market
+    address submitter;         // Your address
+    string predictedText;      // Your prediction
+    uint256 amount;            // ETH staked
+    bool claimed;              // Has payout been claimed
+}
+```
+
+## Events Emitted
+
+```solidity
+event SubmissionCreated(
+    uint256 indexed submissionId,
+    uint256 indexed marketId,
+    address submitter,
+    string predictedText,
+    uint256 amount
+);
+```
+
+Listen for this event to track your submission:
+
+```javascript
+contract.events.SubmissionCreated({
+    filter: { marketId: 0 },
+    fromBlock: 'latest'
+})
+.on('data', (event) => {
+    console.log('New submission:', event.returnValues);
+});
+```
+
+## Strategy Tips
+
+<AccordionGroup>
+  <Accordion title="Study the Actor's Pattern">
+    Review recent posts to understand:
+    - **Vocabulary**: Specific words they frequently use
+    - **Sentence structure**: Short vs. long, formal vs. casual
+    - **Topics**: What they're currently focused on
+    - **Time of day**: When they typically post
+    
+    Example: Elon Musk often uses phrases like "Humanity becomes multiplanetary" and posts about SpaceX launches.
+  </Accordion>
+  
+  <Accordion title="Use AI Roleplay Models">
+    Frontier AI models can generate predictions:
+    
+    ```javascript
+    const prompt = `You are @elonmusk. Write your next tweet about SpaceX in exactly his style and vocabulary. Keep it under 280 characters.`;
+    
+    const prediction = await claude.generate(prompt);
+    ```
+    
+    In the [thesis example](/introduction#example-5-ai-vs-ai-race), Claude achieved distance 1 (single character difference).
+  </Accordion>
+  
+  <Accordion title="Consider Insider Information">
+    If you have access to:
+    - Product launch copy
+    - Press release drafts
+    - Rehearsed talking points
+    
+    You may achieve distance 3-4 (see [insider examples](/introduction#example-2-human-insider-beats-ai)).
+  </Accordion>
+  
+  <Accordion title="Handle NULL Cases">
+    Some actors don't post frequently. You can predict silence:
+    
+    ```javascript
+    const prediction = "__NULL__";
+    ```
+    
+    If the actor doesn't post during the market window, oracle resolves with `__NULL__`, giving you distance 0 (exact match).
+  </Accordion>
+</AccordionGroup>
+
+## Multi-Submission Strategy
+
+You can submit multiple predictions to the same market:
+
+```javascript
+const predictions = [
+    "Starship flight 2 is GO for March.",
+    "Starship flight 2 confirmed for March.",
+    "Starship launch 2 scheduled for March."
+];
+
+for (const text of predictions) {
+    await bettingContract.createSubmission(marketId, text, 0.01);
+}
+```
+
+<Note>
+  Each submission is independent. You compete against yourself and others. Only the winning submission claims the pool.
+</Note>
+
+## Viewing Your Submissions
+
+### Query On-Chain
+
+```javascript
+const userSubmissions = await contract.methods
+    .getUserSubmissions(userAddress)
+    .call();
+
+console.log('Your submission IDs:', userSubmissions);
+
+// Get details for each
+for (const subId of userSubmissions) {
+    const details = await contract.methods
+        .getSubmissionDetails(subId)
+        .call();
+    
+    console.log(`Submission #${subId}:`, {
+        marketId: details.marketId,
+        predictedText: details.predictedText,
+        amount: Web3.utils.fromWei(details.amount, 'ether'),
+        claimed: details.claimed
+    });
+}
+```
+
+### Via API
+
+```bash
+curl https://proteus-production-6213.up.railway.app/api/chain/market/0
+```
+
+Response includes all submissions:
+
+```json
+{
+  "market": {
+    "id": 0,
+    "submissions": [
+      {
+        "id": 0,
+        "creator": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        "predicted_text": "Starship flight 2 is GO for March...",
+        "stake": "100000000000000000"
+      }
+    ]
+  }
+}
+```
+
+## Example: Complete Submission Flow
+
+```javascript
+// 1. Connect wallet
+await window.proteusWallet.connect();
+
+// 2. Initialize contract
+const bettingContract = new BettingContract();
+await bettingContract.init();
+
+// 3. Check market is open
+const market = await bettingContract.contract.methods
+    .markets(marketId)
+    .call();
+
+const now = Math.floor(Date.now() / 1000);
+if (now >= market.endTime - 3600) {
+    throw new Error('Betting cutoff passed');
+}
+
+// 4. Craft prediction
+const prediction = "Starship flight 2 is GO for March. Humanity becomes multiplanetary or we die trying.";
+
+if (prediction.length > 280) {
+    throw new Error('Prediction too long');
+}
+
+// 5. Submit with stake
+const stake = 0.1; // ETH
+const result = await bettingContract.createSubmission(
+    marketId, 
+    prediction, 
+    stake
+);
+
+console.log(`Submission #${result.submissionId} created!`);
+console.log(`Transaction: https://sepolia.basescan.org/tx/${result.transactionHash}`);
+```
+
+## Gas Costs
+
+Submission transactions require:
+- **Gas limit**: ~300,000
+- **Gas price**: Variable (check current BASE gas price)
+- **Total cost**: Your stake + gas fees
+
+```javascript
+const gasPrice = await web3.eth.getGasPrice();
+const gasCost = 300000 * gasPrice;
+const totalCost = stake + gasCost;
+
+console.log(`Total cost: ${Web3.utils.fromWei(totalCost, 'ether')} ETH`);
+```
+
+## Troubleshooting
+
+<Tabs>
+  <Tab title="Transaction Reverted">
+    **Common errors:**
+    
+    - `InsufficientBet`: Stake < 0.001 ETH
+    - `BettingCutoffPassed`: Market closes in < 1 hour
+    - `MarketEnded`: Market already closed
+    - `PredictionTooLong`: Text > 280 characters
+    - `EmptyPrediction`: Text is empty string
+    
+    Check the revert reason in BaseScan transaction details.
+  </Tab>
+  
+  <Tab title="Insufficient Gas">
+    If transaction fails with out-of-gas:
+    
+    ```javascript
+    // Increase gas limit
+    .send({
+        from: account,
+        value: stakeWei,
+        gas: 350000  // Increased from 300000
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Wrong Network">
+    Ensure you're on **BASE Sepolia** (Chain ID: 84532):
+    
+    ```javascript
+    const chainId = await web3.eth.getChainId();
+    if (chainId !== 84532) {
+        await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x14a34' }]  // 84532 in hex
+        });
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Next Steps
+
+After submitting:
+
+1. Wait for market to close
+2. Oracle resolves with actual text
+3. Check if you won (lowest Levenshtein distance)
+4. Claim payout if you're the winner
+
+<Card title="Claiming Payouts" icon="trophy" href="/guides/claiming-payouts">
+  Learn how winners are determined and how to claim your prize
+</Card>

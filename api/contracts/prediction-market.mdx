@@ -1,0 +1,528 @@
+---
+title: "Prediction Market Contract"
+description: "Complete reference for PredictionMarketV2 contract methods"
+---
+
+## Overview
+
+The `PredictionMarketV2` contract manages the complete lifecycle of prediction markets, from creation through resolution and payout. It implements on-chain Levenshtein distance calculation for winner determination and features pull-based fee collection to prevent griefing attacks.
+
+**Contract Address:** TBD (Deployment pending)
+
+## Constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `PLATFORM_FEE_BPS` | 700 | Platform fee in basis points (7%) |
+| `MIN_BET` | 0.001 ether | Minimum bet amount |
+| `BETTING_CUTOFF` | 1 hour | Betting closes 1 hour before market end |
+| `MIN_SUBMISSIONS` | 2 | Minimum submissions required for resolution |
+| `MAX_TEXT_LENGTH` | 280 | Maximum prediction text length (characters) |
+
+---
+
+## Market Creation
+
+### createMarket
+
+Creates a new prediction market for a social media actor.
+
+```solidity
+function createMarket(
+    string calldata _actorHandle,
+    uint256 _duration
+) external whenNotPaused returns (uint256)
+```
+
+<ParamField path="_actorHandle" type="string" required>
+  Social media handle being predicted (e.g., "@elonmusk")
+</ParamField>
+
+<ParamField path="_duration" type="uint256" required>
+  Market duration in seconds. Must be between 1 hour and 30 days.
+</ParamField>
+
+<ResponseField name="marketId" type="uint256">
+  The ID of the newly created market
+</ResponseField>
+
+**Emits:** `MarketCreated(uint256 indexed marketId, string actorHandle, uint256 endTime, address creator)`
+
+**Errors:**
+- `InvalidDuration()` - Duration not between 1 hour and 30 days
+
+**Example:**
+
+```solidity
+// Create market for 7 days
+uint256 marketId = predictionMarket.createMarket("@elonmusk", 7 days);
+```
+
+---
+
+## Submission Management
+
+### createSubmission
+
+Submit a prediction and stake ETH on it.
+
+```solidity
+function createSubmission(
+    uint256 _marketId,
+    string calldata _predictedText
+) external payable whenNotPaused nonReentrant returns (uint256)
+```
+
+<ParamField path="_marketId" type="uint256" required>
+  The market ID to submit to
+</ParamField>
+
+<ParamField path="_predictedText" type="string" required>
+  Your prediction of what the actor will say. Must be 1-280 characters.
+</ParamField>
+
+<ParamField path="msg.value" type="uint256" required>
+  ETH amount to stake. Must be at least `MIN_BET` (0.001 ETH).
+</ParamField>
+
+<ResponseField name="submissionId" type="uint256">
+  The ID of the newly created submission
+</ResponseField>
+
+**Emits:** `SubmissionCreated(uint256 indexed submissionId, uint256 indexed marketId, address submitter, string predictedText, uint256 amount)`
+
+**Errors:**
+- `MarketNotFound()` - Market ID doesn't exist
+- `MarketAlreadyResolved()` - Market already resolved
+- `MarketEnded()` - Market end time passed
+- `BettingCutoffPassed()` - Within 1 hour of market end
+- `InsufficientBet()` - Bet below minimum
+- `EmptyPrediction()` - Prediction text is empty
+- `PredictionTooLong()` - Prediction exceeds 280 characters
+
+**Example:**
+
+```solidity
+// Submit prediction with 0.01 ETH stake
+uint256 submissionId = predictionMarket.createSubmission{value: 0.01 ether}(
+    marketId,
+    "gm"
+);
+```
+
+---
+
+## Market Resolution
+
+### resolveMarket
+
+Resolve a market by providing the actual text. Only callable by contract owner.
+
+```solidity
+function resolveMarket(
+    uint256 _marketId,
+    string calldata _actualText
+) external onlyOwner
+```
+
+<ParamField path="_marketId" type="uint256" required>
+  The market ID to resolve
+</ParamField>
+
+<ParamField path="_actualText" type="string" required>
+  The actual text the actor posted
+</ParamField>
+
+**Emits:** `MarketResolved(uint256 indexed marketId, uint256 winningSubmissionId, string actualText, uint256 winningDistance)`
+
+**Resolution Logic:**
+- Winner determined by minimum Levenshtein distance to actual text
+- First submitter wins ties (deterministic)
+- Requires at least 2 submissions
+
+**Errors:**
+- `MarketNotFound()` - Market ID doesn't exist
+- `MarketAlreadyResolved()` - Market already resolved
+- `MarketNotEnded()` - Market end time not reached
+- `MinimumSubmissionsNotMet()` - Less than 2 submissions
+
+**Example:**
+
+```solidity
+// Resolve market with actual tweet text
+predictionMarket.resolveMarket(marketId, "gm frens");
+```
+
+---
+
+## Payout Claims
+
+### claimPayout
+
+Claim payout for a winning submission.
+
+```solidity
+function claimPayout(uint256 _submissionId) external nonReentrant
+```
+
+<ParamField path="_submissionId" type="uint256" required>
+  The submission ID to claim payout for
+</ParamField>
+
+**Emits:** `PayoutClaimed(uint256 indexed submissionId, address indexed claimer, uint256 amount)`
+
+**Payout Calculation:**
+- Winner receives: `totalPool * (100 - 7) / 100` = 93% of pool
+- Platform receives: `totalPool * 7 / 100` = 7% fee
+- Fees accumulated for pull-based withdrawal
+
+**Errors:**
+- `SubmissionNotFound()` - Submission ID doesn't exist
+- `MarketNotEnded()` - Market not resolved yet
+- `NotWinningSubmission()` - Not the winning submission
+- `AlreadyClaimed()` - Payout already claimed
+- `TransferFailed()` - ETH transfer failed
+
+**Example:**
+
+```solidity
+// Claim payout for winning submission
+predictionMarket.claimPayout(submissionId);
+```
+
+---
+
+### refundSingleSubmission
+
+Refund the only submission when market ends with single entry. Prevents unfair fee loss when there's no competition.
+
+```solidity
+function refundSingleSubmission(uint256 _marketId) external nonReentrant
+```
+
+<ParamField path="_marketId" type="uint256" required>
+  The market with single submission
+</ParamField>
+
+**Emits:** `SingleSubmissionRefunded(uint256 indexed marketId, uint256 indexed submissionId, address submitter, uint256 amount)`
+
+**Errors:**
+- `MarketNotFound()` - Market ID doesn't exist
+- `MarketAlreadyResolved()` - Market already resolved
+- `MarketNotEndedForRefund()` - Market hasn't ended yet
+- `NotSingleSubmission()` - Market has more than 1 submission
+- `AlreadyClaimed()` - Already refunded
+- `TransferFailed()` - ETH transfer failed
+
+---
+
+## Fee Management
+
+### withdrawFees
+
+Withdraw accumulated fees using pull-based pattern.
+
+```solidity
+function withdrawFees() external nonReentrant
+```
+
+**Emits:** `FeesWithdrawn(address indexed recipient, uint256 amount)`
+
+**Errors:**
+- `NoFeesToWithdraw()` - No fees available for caller
+- `TransferFailed()` - ETH transfer failed
+
+**Example:**
+
+```solidity
+// Withdraw accumulated fees
+predictionMarket.withdrawFees();
+```
+
+---
+
+## View Functions
+
+### getMarketSubmissions
+
+Get all submission IDs for a market.
+
+```solidity
+function getMarketSubmissions(uint256 _marketId) external view returns (uint256[] memory)
+```
+
+<ParamField path="_marketId" type="uint256" required>
+  The market ID
+</ParamField>
+
+<ResponseField name="submissionIds" type="uint256[]">
+  Array of submission IDs for the market
+</ResponseField>
+
+---
+
+### getUserSubmissions
+
+Get all submission IDs for a user.
+
+```solidity
+function getUserSubmissions(address _user) external view returns (uint256[] memory)
+```
+
+<ParamField path="_user" type="address" required>
+  The user address
+</ParamField>
+
+<ResponseField name="submissionIds" type="uint256[]">
+  Array of submission IDs for the user
+</ResponseField>
+
+---
+
+### getMarketDetails
+
+Get comprehensive market information.
+
+```solidity
+function getMarketDetails(uint256 _marketId) external view returns (
+    string memory actorHandle,
+    uint256 endTime,
+    uint256 totalPool,
+    bool resolved,
+    uint256 winningSubmissionId,
+    address creator,
+    uint256[] memory submissionIds
+)
+```
+
+<ParamField path="_marketId" type="uint256" required>
+  The market ID
+</ParamField>
+
+<ResponseField name="actorHandle" type="string">
+  The social media handle being predicted
+</ResponseField>
+
+<ResponseField name="endTime" type="uint256">
+  Unix timestamp when the market ends
+</ResponseField>
+
+<ResponseField name="totalPool" type="uint256">
+  Total ETH staked in the market (in wei)
+</ResponseField>
+
+<ResponseField name="resolved" type="bool">
+  Whether the market has been resolved
+</ResponseField>
+
+<ResponseField name="winningSubmissionId" type="uint256">
+  The winning submission ID (0 if unresolved)
+</ResponseField>
+
+<ResponseField name="creator" type="address">
+  Address that created the market
+</ResponseField>
+
+<ResponseField name="submissionIds" type="uint256[]">
+  All submission IDs for this market
+</ResponseField>
+
+---
+
+### getSubmissionDetails
+
+Get comprehensive submission information.
+
+```solidity
+function getSubmissionDetails(uint256 _submissionId) external view returns (
+    uint256 marketId,
+    address submitter,
+    string memory predictedText,
+    uint256 amount,
+    bool claimed
+)
+```
+
+<ParamField path="_submissionId" type="uint256" required>
+  The submission ID
+</ParamField>
+
+<ResponseField name="marketId" type="uint256">
+  The market this submission belongs to
+</ResponseField>
+
+<ResponseField name="submitter" type="address">
+  Address that created the submission
+</ResponseField>
+
+<ResponseField name="predictedText" type="string">
+  The predicted text
+</ResponseField>
+
+<ResponseField name="amount" type="uint256">
+  ETH staked on this prediction (in wei)
+</ResponseField>
+
+<ResponseField name="claimed" type="bool">
+  Whether payout has been claimed
+</ResponseField>
+
+---
+
+## Admin Functions
+
+### setFeeRecipient
+
+Update the fee recipient address. Only callable by contract owner.
+
+```solidity
+function setFeeRecipient(address _newRecipient) external onlyOwner
+```
+
+<ParamField path="_newRecipient" type="address" required>
+  New address to receive platform fees
+</ParamField>
+
+---
+
+### pause
+
+Pause the contract in emergency situations. Only callable by contract owner.
+
+```solidity
+function pause() external onlyOwner
+```
+
+When paused, `createMarket` and `createSubmission` cannot be called.
+
+---
+
+### unpause
+
+Unpause the contract. Only callable by contract owner.
+
+```solidity
+function unpause() external onlyOwner
+```
+
+---
+
+### emergencyWithdraw
+
+Emergency withdraw for unresolved markets. Returns funds to submitters. Only callable by contract owner.
+
+```solidity
+function emergencyWithdraw(uint256 _marketId) external onlyOwner nonReentrant
+```
+
+<ParamField path="_marketId" type="uint256" required>
+  The market to emergency withdraw from
+</ParamField>
+
+**Requirements:**
+- Only callable 7 days after market end time
+- Market must not be resolved
+- Returns full stake to each submitter (no fees taken)
+
+**Errors:**
+- `MarketNotFound()` - Market ID doesn't exist
+- `MarketAlreadyResolved()` - Market already resolved
+- `MarketNotEnded()` - Not 7 days past market end
+
+---
+
+## Utility Functions
+
+### levenshteinDistance
+
+Calculate Levenshtein (edit) distance between two strings. Pure function, callable off-chain.
+
+```solidity
+function levenshteinDistance(
+    string memory a,
+    string memory b
+) public pure returns (uint256)
+```
+
+<ParamField path="a" type="string" required>
+  First string
+</ParamField>
+
+<ParamField path="b" type="string" required>
+  Second string
+</ParamField>
+
+<ResponseField name="distance" type="uint256">
+  The edit distance between the strings
+</ResponseField>
+
+**Gas Cost:** O(m*n) where m and n are string lengths. Recommended max length: ~100 characters each.
+
+**Example:**
+
+```solidity
+uint256 distance = predictionMarket.levenshteinDistance("hello", "hallo");
+// Returns: 1
+```
+
+---
+
+## State Variables
+
+### marketCount
+
+```solidity
+uint256 public marketCount
+```
+
+Total number of markets created (also serves as next market ID).
+
+---
+
+### submissionCount
+
+```solidity
+uint256 public submissionCount
+```
+
+Total number of submissions created (also serves as next submission ID).
+
+---
+
+### markets
+
+```solidity
+mapping(uint256 => Market) public markets
+```
+
+Mapping from market ID to Market struct.
+
+---
+
+### submissions
+
+```solidity
+mapping(uint256 => Submission) public submissions
+```
+
+Mapping from submission ID to Submission struct.
+
+---
+
+### pendingFees
+
+```solidity
+mapping(address => uint256) public pendingFees
+```
+
+Accumulated fees available for withdrawal by address.
+
+---
+
+### feeRecipient
+
+```solidity
+address public feeRecipient
+```
+
+Address designated to receive platform fees.

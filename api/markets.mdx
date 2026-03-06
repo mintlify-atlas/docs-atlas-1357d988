@@ -1,0 +1,323 @@
+---
+title: Markets
+description: Query prediction markets from the blockchain
+---
+
+## Get All Markets
+
+Fetch all prediction markets from the EnhancedPredictionMarket contract.
+
+```bash cURL
+curl https://api.proteus.com/api/chain/markets
+```
+
+<ParamField query="status" type="string">
+  Filter by market status: `active`, `resolved`, or `all` (default: all)
+</ParamField>
+
+<ResponseField name="markets" type="array">
+  Array of market objects fetched from blockchain
+</ResponseField>
+
+<ResponseField name="total" type="number">
+  Total number of markets returned
+</ResponseField>
+
+<ResponseField name="source" type="string">
+  Always `"blockchain"` - indicates data source
+</ResponseField>
+
+### Response
+
+```json
+{
+  "markets": [
+    {
+      "id": 1,
+      "actor_address": "0x1234567890abcdef1234567890abcdef12345678",
+      "start_time": 1735689600,
+      "end_time": 1735776000,
+      "status": "active",
+      "total_volume": "1500000000000000000",
+      "block_number": 12345678,
+      "transaction_hash": "0xabcdef..."
+    },
+    {
+      "id": 2,
+      "actor_address": "0x9876543210fedcba9876543210fedcba98765432",
+      "start_time": 1735603200,
+      "end_time": 1735689600,
+      "status": "resolved",
+      "total_volume": "2500000000000000000",
+      "block_number": 12340000,
+      "transaction_hash": "0x123456..."
+    }
+  ],
+  "total": 2,
+  "source": "blockchain"
+}
+```
+
+<Info>
+All market data is queried from `MarketCreated` events emitted by the smart contract. The API automatically processes event logs and enriches them with current on-chain state.
+</Info>
+
+## Get Market Details
+
+Get detailed information about a specific market including submissions and bets.
+
+```bash cURL
+curl https://api.proteus.com/api/chain/market/1
+```
+
+<ParamField path="market_id" type="number" required>
+  The on-chain market ID
+</ParamField>
+
+<ResponseField name="market" type="object">
+  Detailed market data including submissions and betting statistics
+</ResponseField>
+
+<ResponseField name="market.id" type="number">
+  Market ID
+</ResponseField>
+
+<ResponseField name="market.actor_address" type="string">
+  Ethereum address of the actor this market is about
+</ResponseField>
+
+<ResponseField name="market.start_time" type="number">
+  Unix timestamp when market becomes active
+</ResponseField>
+
+<ResponseField name="market.end_time" type="number">
+  Unix timestamp when market closes for predictions
+</ResponseField>
+
+<ResponseField name="market.status" type="string">
+  Current status: `active`, `resolved`, or `cancelled`
+</ResponseField>
+
+<ResponseField name="market.total_volume" type="string">
+  Total ETH volume in wei (use Web3.utils.fromWei to convert)
+</ResponseField>
+
+<ResponseField name="market.submissions" type="array">
+  Array of prediction submissions for this market
+</ResponseField>
+
+<ResponseField name="market.bet_count" type="number">
+  Total number of bets placed on this market
+</ResponseField>
+
+<ResponseField name="market.bet_volume" type="string">
+  Total ETH bet volume in wei
+</ResponseField>
+
+### Response
+
+```json
+{
+  "market": {
+    "id": 1,
+    "actor_address": "0x1234567890abcdef1234567890abcdef12345678",
+    "start_time": 1735689600,
+    "end_time": 1735776000,
+    "status": "active",
+    "total_volume": "1500000000000000000",
+    "submissions": [
+      {
+        "id": 0,
+        "creator": "0xabcdef1234567890abcdef1234567890abcdef12",
+        "predicted_text": "Mars is the future of humanity",
+        "stake": "100000000000000000",
+        "block_number": 12345680
+      },
+      {
+        "id": 1,
+        "creator": "0x567890abcdef1234567890abcdef1234567890ab",
+        "predicted_text": "The red planet awaits us",
+        "stake": "150000000000000000",
+        "block_number": 12345685
+      }
+    ],
+    "bet_count": 12,
+    "bet_volume": "1250000000000000000"
+  },
+  "source": "blockchain"
+}
+```
+
+## Get Platform Stats
+
+Get aggregated statistics across all markets.
+
+```bash cURL
+curl https://api.proteus.com/api/chain/stats
+```
+
+<ResponseField name="total_markets" type="number">
+  Total number of markets created
+</ResponseField>
+
+<ResponseField name="active_markets" type="number">
+  Markets currently accepting predictions
+</ResponseField>
+
+<ResponseField name="resolved_markets" type="number">
+  Markets that have been resolved
+</ResponseField>
+
+<ResponseField name="total_volume" type="string">
+  Total ETH volume across all markets (wei)
+</ResponseField>
+
+<ResponseField name="total_actors" type="number">
+  Number of registered actors
+</ResponseField>
+
+<ResponseField name="genesis_nft_holders" type="number">
+  Total Genesis NFT supply minted
+</ResponseField>
+
+<ResponseField name="gas_price" type="string">
+  Current BASE network gas price (wei)
+</ResponseField>
+
+### Response
+
+```json
+{
+  "total_markets": 150,
+  "active_markets": 45,
+  "resolved_markets": 98,
+  "total_volume": "15000000000000000000000",
+  "total_actors": 87,
+  "genesis_nft_holders": 63,
+  "gas_price": "1000000000",
+  "source": "blockchain"
+}
+```
+
+<Warning>
+Stats aggregation requires querying all market events and can be resource-intensive. This endpoint has a 10-second cache TTL. For high-frequency applications, consider caching the response client-side.
+</Warning>
+
+## Get Oracle Submissions
+
+Get oracle submissions for a specific market (used for resolution).
+
+```bash cURL
+curl https://api.proteus.com/api/chain/oracle/submissions/1
+```
+
+<ParamField path="market_id" type="number" required>
+  The market ID to query oracle submissions for
+</ParamField>
+
+<ResponseField name="market_id" type="string">
+  Market ID as string
+</ResponseField>
+
+<ResponseField name="submissions" type="array">
+  Array of oracle submissions from DecentralizedOracle contract
+</ResponseField>
+
+<ResponseField name="submissions[].oracle" type="string">
+  Address of the oracle node that submitted
+</ResponseField>
+
+<ResponseField name="submissions[].actual_text" type="string">
+  The actual text that was posted by the actor
+</ResponseField>
+
+<ResponseField name="submissions[].source_url" type="string">
+  URL of the source (e.g., X.com tweet link)
+</ResponseField>
+
+<ResponseField name="submissions[].timestamp" type="number">
+  Unix timestamp of oracle submission
+</ResponseField>
+
+<ResponseField name="total" type="number">
+  Total number of oracle submissions
+</ResponseField>
+
+### Response
+
+```json
+{
+  "market_id": "1",
+  "submissions": [
+    {
+      "oracle": "0xoracle1234567890abcdef1234567890abcdef1234",
+      "actual_text": "Mars is definitely the future of humanity",
+      "source_url": "https://x.com/elonmusk/status/1234567890",
+      "timestamp": 1735780000,
+      "block_number": 12346000,
+      "transaction_hash": "0xfedcba9876543210fedcba9876543210fedcba98"
+    }
+  ],
+  "total": 1,
+  "source": "blockchain"
+}
+```
+
+## Market Status Values
+
+| Status | Description |
+|--------|-------------|
+| `active` | Market is open for predictions |
+| `resolved` | Market has been resolved with outcome |
+| `cancelled` | Market was cancelled (rare) |
+| `unknown` | Unable to determine status from contract |
+
+## Working with Wei Values
+
+All ETH amounts are returned as strings in wei (1 ETH = 10^18 wei).
+
+```javascript JavaScript
+import { ethers } from 'ethers';
+
+// Convert wei to ETH
+const volumeWei = "1500000000000000000";
+const volumeEth = ethers.formatEther(volumeWei);
+console.log(volumeEth); // "1.5"
+
+// Convert ETH to wei
+const stakeEth = "0.1";
+const stakeWei = ethers.parseEther(stakeEth);
+console.log(stakeWei); // "100000000000000000"
+```
+
+```python Python
+from web3 import Web3
+
+# Convert wei to ETH
+volume_wei = 1500000000000000000
+volume_eth = Web3.from_wei(volume_wei, 'ether')
+print(volume_eth)  # Decimal('1.5')
+
+# Convert ETH to wei
+stake_eth = 0.1
+stake_wei = Web3.to_wei(stake_eth, 'ether')
+print(stake_wei)  # 100000000000000000
+```
+
+## Error Handling
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "message": "Market contract not available"
+  }
+}
+```
+
+Common error scenarios:
+
+- **503 Service Unavailable** - Contract not initialized or RPC connection issue
+- **404 Not Found** - Market ID does not exist on-chain
+- **500 Blockchain Error** - Failed to query contract (check BASE network status)

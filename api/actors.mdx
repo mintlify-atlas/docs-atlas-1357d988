@@ -1,0 +1,323 @@
+---
+title: Actors
+description: Get registered actor data from the ActorRegistry contract
+---
+
+## Get All Actors
+
+Fetch all registered actors from the ActorRegistry contract.
+
+```bash cURL
+curl https://api.proteus.com/api/chain/actors
+```
+
+<ResponseField name="actors" type="array">
+  Array of actor objects from blockchain
+</ResponseField>
+
+<ResponseField name="total" type="number">
+  Total number of actors returned
+</ResponseField>
+
+<ResponseField name="source" type="string">
+  Always `"blockchain"` - indicates data source
+</ResponseField>
+
+### Response
+
+```json
+{
+  "actors": [
+    {
+      "address": "0x1234567890abcdef1234567890abcdef12345678",
+      "name": "Elon Musk",
+      "x_username": "elonmusk",
+      "verified": true,
+      "block_number": 12345000
+    },
+    {
+      "address": "0x9876543210fedcba9876543210fedcba98765432",
+      "name": "Vitalik Buterin",
+      "x_username": "VitalikButerin",
+      "verified": true,
+      "block_number": 12346000
+    }
+  ],
+  "total": 2,
+  "source": "blockchain"
+}
+```
+
+<Info>
+Actor data is fetched from `ActorRegistered` events emitted by the ActorRegistry contract. The API queries historical events and enriches them with current on-chain state using the `getActor()` contract method.
+</Info>
+
+## Actor Object Fields
+
+<ResponseField name="address" type="string">
+  Ethereum address of the actor (can be zero address for unlinked actors)
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Display name of the actor (e.g., "Elon Musk")
+</ResponseField>
+
+<ResponseField name="x_username" type="string">
+  X.com (Twitter) username without @ symbol
+</ResponseField>
+
+<ResponseField name="verified" type="boolean">
+  Whether the actor has been verified by the platform
+</ResponseField>
+
+<ResponseField name="block_number" type="number">
+  Block number when the actor was registered
+</ResponseField>
+
+## Actor Verification
+
+Actors must be verified before markets can be created for them. Verification is handled on-chain by the ActorRegistry contract owner.
+
+### Check if Actor is Verified
+
+```javascript JavaScript
+import { ethers } from 'ethers';
+
+const actorRegistryABI = [
+  "function getActor(address actorAddress) view returns (string name, string xUsername, bool verified)"
+];
+
+const provider = new ethers.JsonRpcProvider('https://sepolia.base.org');
+const actorRegistry = new ethers.Contract(
+  '0xC71CC19C5573C5E1E144829800cD0005D0eDB723',
+  actorRegistryABI,
+  provider
+);
+
+const actorAddress = '0x1234567890abcdef1234567890abcdef12345678';
+const [name, xUsername, verified] = await actorRegistry.getActor(actorAddress);
+
+console.log('Actor:', name);
+console.log('X Username:', xUsername);
+console.log('Verified:', verified);
+```
+
+## Register New Actor
+
+To register a new actor, you must interact directly with the ActorRegistry contract.
+
+### Contract Method
+
+```solidity
+function registerActor(
+  address actorAddress,
+  string memory name,
+  string memory xUsername
+) external
+```
+
+<ParamField body="actorAddress" type="address" required>
+  Ethereum address of the actor (use zero address if unknown)
+</ParamField>
+
+<ParamField body="name" type="string" required>
+  Display name (e.g., "Elon Musk")
+</ParamField>
+
+<ParamField body="xUsername" type="string" required>
+  X.com username without @ symbol (e.g., "elonmusk")
+</ParamField>
+
+<Warning>
+Any address can register an actor, but the actor will not be `verified` until the contract owner approves them. Only verified actors can have markets created for them.
+</Warning>
+
+### Using Web3.js
+
+```javascript JavaScript
+import { ethers } from 'ethers';
+
+const actorRegistryABI = [
+  "function registerActor(address actorAddress, string memory name, string memory xUsername) external"
+];
+
+const provider = new ethers.BrowserProvider(window.ethereum);
+const signer = await provider.getSigner();
+const actorRegistry = new ethers.Contract(
+  '0xC71CC19C5573C5E1E144829800cD0005D0eDB723',
+  actorRegistryABI,
+  signer
+);
+
+// Register actor
+const tx = await actorRegistry.registerActor(
+  '0x0000000000000000000000000000000000000000',  // Zero address (unknown wallet)
+  'Elon Musk',
+  'elonmusk'
+);
+
+const receipt = await tx.wait();
+console.log('Actor registered:', receipt.transactionHash);
+```
+
+## Get Genesis NFT Holders
+
+Fetch addresses holding Genesis NFTs (relevant for platform governance).
+
+```bash cURL
+curl https://api.proteus.com/api/chain/genesis/holders
+```
+
+<ResponseField name="holders" type="array">
+  Array of Genesis NFT holder data
+</ResponseField>
+
+<ResponseField name="holders[].address" type="string">
+  Ethereum address of the holder
+</ResponseField>
+
+<ResponseField name="holders[].token_count" type="number">
+  Number of Genesis NFTs held
+</ResponseField>
+
+<ResponseField name="holders[].token_ids" type="array">
+  Array of token IDs owned
+</ResponseField>
+
+<ResponseField name="holders[].percentage_owned" type="number">
+  Percentage of total supply owned (out of 100 total)
+</ResponseField>
+
+<ResponseField name="total_holders" type="number">
+  Total number of unique holders
+</ResponseField>
+
+<ResponseField name="total_supply" type="number">
+  Total Genesis NFT supply (100)
+</ResponseField>
+
+### Response
+
+```json
+{
+  "holders": [
+    {
+      "address": "0xholder1234567890abcdef1234567890abcdef1234",
+      "token_count": 5,
+      "token_ids": [1, 5, 12, 23, 45],
+      "percentage_owned": 5
+    },
+    {
+      "address": "0xholder2222222222abcdef1234567890abcdef2222",
+      "token_count": 3,
+      "token_ids": [2, 8, 15],
+      "percentage_owned": 3
+    }
+  ],
+  "total_holders": 42,
+  "total_supply": 100,
+  "source": "blockchain"
+}
+```
+
+<Info>
+Genesis NFT holders get:
+- **Higher rate limits** (500 req/min vs 100 req/min)
+- **Platform fee share** (percentage of all market fees)
+- **Governance rights** (future feature)
+</Info>
+
+## Contract Events
+
+The ActorRegistry contract emits these events:
+
+### ActorRegistered
+
+```solidity
+event ActorRegistered(
+  address indexed actorAddress,
+  string name,
+  string xUsername,
+  address indexed registeredBy
+);
+```
+
+Emitted when a new actor is registered.
+
+### ActorVerified
+
+```solidity
+event ActorVerified(
+  address indexed actorAddress,
+  bool verified
+);
+```
+
+Emitted when an actor's verification status changes.
+
+## Listening to Events
+
+```javascript JavaScript
+import { ethers } from 'ethers';
+
+const provider = new ethers.JsonRpcProvider('https://sepolia.base.org');
+const actorRegistry = new ethers.Contract(
+  '0xC71CC19C5573C5E1E144829800cD0005D0eDB723',
+  actorRegistryABI,
+  provider
+);
+
+// Listen for new actor registrations
+actorRegistry.on('ActorRegistered', (actorAddress, name, xUsername, registeredBy) => {
+  console.log('New actor registered:');
+  console.log('Address:', actorAddress);
+  console.log('Name:', name);
+  console.log('X Username:', xUsername);
+  console.log('Registered by:', registeredBy);
+});
+
+// Query historical registrations
+const filter = actorRegistry.filters.ActorRegistered();
+const events = await actorRegistry.queryFilter(filter, 0, 'latest');
+
+events.forEach(event => {
+  console.log('Actor:', event.args.name, '@' + event.args.xUsername);
+});
+```
+
+## Error Handling
+
+```json
+{
+  "actors": [],
+  "total": 0,
+  "source": "blockchain",
+  "error": "Could not query actor events"
+}
+```
+
+The API gracefully handles contract query failures by returning an empty array. Common issues:
+
+- **Empty response** - Contract not deployed or no actors registered yet
+- **RPC timeout** - BASE network connectivity issue
+- **Contract not available** - ActorRegistry address not configured
+
+## Contract Address
+
+### BASE Sepolia (Testnet)
+
+```
+0xC71CC19C5573C5E1E144829800cD0005D0eDB723
+```
+
+### BASE Mainnet
+
+Not yet deployed.
+
+## Best Practices
+
+1. **Cache actor data** - Actor list changes infrequently (5 min TTL recommended)
+2. **Verify actors exist** before creating markets
+3. **Check verification status** before allowing market creation
+4. **Handle empty responses** gracefully (new deployments may have no actors)
+5. **Use lowercase comparisons** for X usernames (case-insensitive)
