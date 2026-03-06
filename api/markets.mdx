@@ -8,7 +8,7 @@ description: Query prediction markets from the blockchain
 Fetch all prediction markets from the EnhancedPredictionMarket contract.
 
 ```bash cURL
-curl https://api.proteus.com/api/chain/markets
+curl https://proteus-production-6213.up.railway.app/api/chain/markets
 ```
 
 <ParamField query="status" type="string">
@@ -67,7 +67,7 @@ All market data is queried from `MarketCreated` events emitted by the smart cont
 Get detailed information about a specific market including submissions and bets.
 
 ```bash cURL
-curl https://api.proteus.com/api/chain/market/1
+curl https://proteus-production-6213.up.railway.app/api/chain/market/1
 ```
 
 <ParamField path="market_id" type="number" required>
@@ -153,7 +153,7 @@ curl https://api.proteus.com/api/chain/market/1
 Get aggregated statistics across all markets.
 
 ```bash cURL
-curl https://api.proteus.com/api/chain/stats
+curl https://proteus-production-6213.up.railway.app/api/chain/stats
 ```
 
 <ResponseField name="total_markets" type="number">
@@ -208,7 +208,7 @@ Stats aggregation requires querying all market events and can be resource-intens
 Get oracle submissions for a specific market (used for resolution).
 
 ```bash cURL
-curl https://api.proteus.com/api/chain/oracle/submissions/1
+curl https://proteus-production-6213.up.railway.app/api/chain/oracle/submissions/1
 ```
 
 <ParamField path="market_id" type="number" required>

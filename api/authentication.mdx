@@ -23,7 +23,7 @@ Authorization: Bearer <jwt_token>
 Request a unique nonce for your wallet address.
 
 ```bash cURL
-curl https://api.proteus.com/auth/nonce/0x1234567890abcdef1234567890abcdef12345678
+curl https://proteus-production-6213.up.railway.app/auth/nonce/0x1234567890abcdef1234567890abcdef12345678
 ```
 
 <ParamField path="address" type="string" required>
@@ -63,7 +63,7 @@ const signature = await ethereum.request({
 Submit the signature to receive a JWT token.
 
 ```bash cURL
-curl -X POST https://api.proteus.com/auth/verify \
+curl -X POST https://proteus-production-6213.up.railway.app/auth/verify \
   -H "Content-Type: application/json" \
   -d '{
     "address": "0x1234567890abcdef1234567890abcdef12345678",
@@ -116,7 +116,7 @@ curl -X POST https://api.proteus.com/auth/verify \
 Send an OTP code to the user's email.
 
 ```bash cURL
-curl -X POST https://api.proteus.com/api/embedded/auth/send-otp \
+curl -X POST https://proteus-production-6213.up.railway.app/api/embedded/auth/send-otp \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com"
@@ -141,7 +141,7 @@ curl -X POST https://api.proteus.com/api/embedded/auth/send-otp \
 Submit the 6-digit OTP code to authenticate.
 
 ```bash cURL
-curl -X POST https://api.proteus.com/api/embedded/auth/verify-otp \
+curl -X POST https://proteus-production-6213.up.railway.app/api/embedded/auth/verify-otp \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -185,7 +185,7 @@ curl -X POST https://api.proteus.com/api/embedded/auth/verify-otp \
 Refresh your JWT token before it expires.
 
 ```bash cURL
-curl -X POST https://api.proteus.com/auth/refresh \
+curl -X POST https://proteus-production-6213.up.railway.app/auth/refresh \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
@@ -205,7 +205,7 @@ curl -X POST https://api.proteus.com/auth/refresh \
 ### Check Auth Status (JWT)
 
 ```bash cURL
-curl https://api.proteus.com/auth/jwt-status \
+curl https://proteus-production-6213.up.railway.app/auth/jwt-status \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
@@ -223,7 +223,7 @@ curl https://api.proteus.com/auth/jwt-status \
 For Coinbase Embedded Wallet users with session cookies:
 
 ```bash cURL
-curl https://api.proteus.com/api/embedded/auth/status \
+curl https://proteus-production-6213.up.railway.app/api/embedded/auth/status \
   --cookie "session=..."
 ```
 
@@ -241,7 +241,7 @@ curl https://api.proteus.com/api/embedded/auth/status \
 ### Logout
 
 ```bash cURL
-curl -X POST https://api.proteus.com/auth/logout \
+curl -X POST https://proteus-production-6213.up.railway.app/auth/logout \
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 ```
 
